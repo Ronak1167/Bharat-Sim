@@ -6,9 +6,17 @@ This document is the release checklist for turning BharatSim from a credible loc
 
 **Do not expose public APK execution yet.** The repository documents real fixture-only Android emulator runs and a local API → queue/lease → ADB → callback → saved-report path. Those results validate the source-built fixture in CI, not arbitrary uploaded APKs, multi-tenant security, physical-device fidelity, or a production deployment.
 
+## Observed infrastructure status (2026-11-01)
+
+- common1 has the private `bharatsim` schema, RLS enabled on its tables, no schema USAGE for `anon`/`authenticated`, and the private `bharatsim-private` bucket. The signed-upload size migration is applied.
+- Vercel frontend has the correct public common1 URL/publishable key and target-specific API base URLs. Backend has the common1 URL, required Supabase JWT auth, private bucket name, CORS origins, and fail-closed Production mode; Preview is explicitly Development-only.
+- Production Vercel is still missing `BHARATSIM_DATABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. The worker token and Sarvam key are also not configured. The API intentionally cannot be considered production-ready without the first two.
+- Vercel SSO protection remains enabled and deployment builds are currently blocked by the team's `build-rate-limit`. The latest production aliases still point to an older commit.
+- No isolated production Android worker host has been provisioned. See `docs/WORKER_HOST_SETUP.md` and the systemd templates in `deploy/`.
+- The code and CI implement the signed TUS upload path, but no live Vercel-to-common1 upload has been verified. No arbitrary APK execution or production release is claimed.
 ## P0 — Safety and tenant boundaries
 
-- [ ] Add real user identity (or an explicitly scoped single-tenant access model) and enforce authorization on every run, report, log analysis, download, and artifact endpoint.
+- [x] Implement Supabase Auth sign-up/sign-in, asymmetric JWT verification, and owner scoping for core run/analysis/report routes in code. Live Auth provider/redirect settings and deployed-token verification remain release gates; authorization coverage for every customer-data route is tracked separately below.
 - [ ] Complete cross-user denial coverage for every customer-data route, including list/read/report export/delete, analyses, and any future artifact endpoints. Current regression tests cover run listing/detail, report export, deletion, analysis listing, and worker run-ID non-disclosure; live Supabase Auth and expired-session behavior still require deployment-level verification.
 - [ ] Run each untrusted APK only in a disposable VM or equivalently strong isolation boundary. No host secrets, privileged container, Docker socket, host filesystem mounts, or access to cloud metadata; default-deny egress except explicitly approved test targets.
 - [ ] Enforce per-job CPU, memory, disk, process, wall-clock and network quotas. Ensure timeout/cancellation actually stops ADB, emulator, Appium and child processes.
