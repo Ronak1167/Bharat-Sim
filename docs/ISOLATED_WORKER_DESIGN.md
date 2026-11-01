@@ -17,10 +17,12 @@ Firecracker is selected over a plain Docker container because uploaded APKs are 
 - [Appium documentation](https://appium.io/docs/en/latest/) — existing open-source Android UI automation stack.
 - [Android application sandbox](https://source.android.com/docs/security/app-sandbox) — Android's per-app UID/process isolation; it does not isolate an uploaded APK from the worker host.
 
-## Security advisory and version floor
+## Security advisory and version pin (verified 2026-11-02)
 
-Before provisioning any worker host, select a currently supported Firecracker release and pin the exact VMM and matching jailer binaries by version and checksum. **Do not deploy Firecracker v1.13.1 or earlier, or v1.14.0**: AWS disclosed CVE-2026-1386, an arbitrary host-file-overwrite issue in the jailer under certain symlink conditions. The published fixed versions are v1.13.2 and v1.14.1. Prefer a newer supported patched release after checking upstream advisories; verify that the jailer and statically linked Firecracker binary are from the same release. Keep the jailer directory root-owned and inaccessible to untrusted users (for example, mode 0700), and ensure all jailer input paths and parents are trusted and non-writable by unprivileged users.
+Before provisioning any worker host, pin the **currently supported Firecracker v1.17.0** release (released 2026-09-10 per the upstream release policy) as the initial candidate, then verify the official release asset, checksum/signature and any newer security advisories immediately before installation. Pin the exact VMM and matching jailer binaries from the same release; do not mix versions. **Never deploy v1.13.1 or earlier, or v1.14.0**: AWS disclosed CVE-2026-1386, an arbitrary host-file-overwrite issue in the jailer under certain symlink conditions. The published fixed versions are v1.13.2 and v1.14.1. The older fixed releases are not the recommended deployment target because upstream now lists v1.17.0 as supported. Keep the jailer directory root-owned and inaccessible to untrusted users (for example, mode 0700), and ensure all jailer input paths and parents are trusted and non-writable by unprivileged users. Production must use the default seccomp filters; never use debug/experimental builds or `--no-seccomp`. Add an external watchdog because Firecracker documents that an unresponsive process can deadlock in signal/logging paths.
 
+- [Firecracker release policy: v1.17.0 supported release](https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md)
+- [Firecracker seccomp defaults](https://github.com/firecracker-microvm/firecracker/blob/main/docs/seccomp.md)
 - [AWS security bulletin: CVE-2026-1386 and fixed versions](https://aws.amazon.com/security/security-bulletins/2026-003-AWS/)
 - [Firecracker production host setup](https://github.com/firecracker-microvm/firecracker/blob/main/docs/prod-host-setup.md)
 - [Firecracker jailer trust and path requirements](https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md)
@@ -74,8 +76,8 @@ Benchmark actual emulator image requirements before committing a host density or
 ## Implementation phases
 
 ### Phase A — host prototype (not yet done)
-- Provision a dedicated Linux x86_64 host with KVM; verify `/dev/kvm` and hardware virtualization.
-- Install a pinned Firecracker release and matching jailer; verify checksums/signatures.
+- Provision a dedicated Linux x86_64 host with KVM; verify `/dev/kvm` and hardware virtualization. Ordinary Vercel sandboxes and generic shared CI runners are not accepted as production worker hosts.
+- Install Firecracker v1.17.0 (or a newer supported patched release selected after an advisory check) and its matching jailer; verify official checksums/signatures and record both binary hashes.
 - Build a minimal Ubuntu 24.04 guest image with Android SDK/emulator, Appium and the BharatSim worker.
 - Add TAP networking, host firewall, DNS policy proxy, cgroup quotas and a watchdog.
 - Run malicious-network tests from inside the guest: metadata, localhost, private IPv4/IPv6, DNS rebinding, redirects, alternate encodings and IPv4-mapped IPv6 must all be denied.
