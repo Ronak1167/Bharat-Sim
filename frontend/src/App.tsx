@@ -43,6 +43,7 @@ import FindingCard from "./components/FindingCard";
 import ScoreRing from "./components/ScoreRing";
 import RunDetailView from "./components/RunDetailView";
 import CapabilityPanel from "./components/CapabilityPanel";
+import PlannerPanel from "./components/PlannerPanel";
 import SarvamTranslation from "./components/SarvamTranslation";
 import { clearPendingApkUpload, getPendingApkUpload, savePendingApkUpload, uploadApkResumable, type SignedApkUploadTicket } from "./storageUpload";
 
@@ -571,6 +572,8 @@ export default function App() {
                     onSubmit={submitApk}
                   />
 
+                  <PlannerPanel selected={selected} />
+
                   <section className="panel log-panel">
                     <div className="panel-heading">
                       <div>
@@ -826,6 +829,15 @@ export default function App() {
                           </span>
                         </div>
                       </div>
+                      {analysis.failure_dna ? (
+                        <div className="failure-dna-summary">
+                          <b>Failure DNA</b>
+                          <span>{analysis.failure_dna.group_count} normalized groups</span>
+                          <span>{analysis.failure_dna.total_occurrences} marker occurrences</span>
+                          {analysis.user_impact ? <strong>Relative investigation priority: {analysis.user_impact.priority_score}/100</strong> : null}
+                          <small>Persona/severity ordering only — not an affected-user estimate.</small>
+                        </div>
+                      ) : null}
 
                       <div className="finding-list">
                         {analysis.findings.length === 0 ? (

@@ -3,12 +3,12 @@
 ## Implemented in the current draft
 
 - [x] Repository scaffold and setup instructions.
-- [x] Four named persona definitions and deterministic risk-ranked test planning.
+- [x] Four named persona definitions and deterministic risk-ranked test planning, including pairwise condition-interaction hypotheses surfaced in the dashboard. The planner ranks tests but does not execute them.
 - [x] APK upload size cap, ZIP/APK-like archive metadata checks, and SHA-256 fingerprint.
 - [x] SQLite persistence for run metadata and log analyses, with backward-compatible worker columns.
-- [x] Crash, ANR, memory, network, StrictMode and storage log markers; failure fingerprints and evidence-linked diagnostics.
+- [x] Crash, ANR, memory, network, StrictMode and storage log markers; Failure DNA groups normalized fingerprints, preserves occurrence counts/line context, redacts common credentials, and emits low-confidence evidence-linked hypotheses with validation steps.
 - [x] Worker reports include bounded, line-addressable crash/ANR/OOM/network/storage marker excerpts from collected logcat with nearby context; they are diagnostic markers, not confirmed root causes, and empty logs do not generate findings.
-- [x] Transparent heuristic BharatScore with explicit limitations.
+- [x] Transparent heuristic BharatScore with explicit limitations, plus a relative persona/severity investigation-priority score that is explicitly not an affected-user estimate.
 - [x] Responsive dashboard for persona selection, run registration/history, log analysis, worker heartbeat status, and report inspection.
 - [x] Real Chromium browser E2E against the actual local FastAPI service and isolated SQLite test database: connected API/profile loading, line-addressable log analysis, and disabled run registration until an APK is selected. The backend independently rejects run creation without an APK. These tests do not fabricate execution results.
 - [x] Authenticated worker claim protocol, short-lived leases, heartbeat extension, authorized APK download, result callbacks, stale-result rejection, and bounded inline results.
@@ -42,7 +42,7 @@
 - [x] Implement and pass the Appium/UiAutomator2 fixture journey with explicit steps, assertions, screenshots, and repeatable checkpoints.
 - [ ] Add app-specific journey authoring, broader assertions, and error-state coverage for arbitrary uploaded applications.
 - [ ] Verify a real request from the source-built fixture is measurably slower under the active emulator profile than its baseline on the same supported transport on the current release candidate. Historical external-endpoint results are not sufficient to mark the current experiment complete.
-- [ ] Verify latency and bandwidth shaping with repeated 2,000,000-byte HTTPS transfers, record actual payload bytes/retries, require observable median deltas, and verify reset. The current candidate uses Cloudflare's documented `https://speed.cloudflare.com/__down?bytes=500000` speed-test endpoint, resolves its IPv4 address on the CI host, pins that IP in the fixture socket, retains the URL hostname for TLS SNI/certificate validation, and explicitly enables the simulated cellular route. A bounded preflight requires Android to expose a cellular default route before probing; failed probes include device-side logcat. If the public endpoint remains unreachable or measurements do not pass, keep these controls marked partially verified rather than claiming full traffic-path support.
+- [ ] Verify latency and bandwidth shaping with repeated 256,000-byte HTTPS transfers to the repository-controlled `raw.githubusercontent.com` fixture, record actual payload bytes/retries, require observable median deltas, and verify reset. The fixture resolves IPv4 on the CI host, pins that IP in the Android socket, and retains the hostname for TLS SNI/certificate validation. The latest run reached TLS and HTTP 206 headers over CELLULAR but timed out while reading the first bandwidth-only body. The candidate now uses an explicit `1920:1920` kbps profile and independent per-attempt deadlines so retries are not starved by one socket timeout; CI rerun is pending. Do not mark the traffic path verified until repeated measurements and reset pass.
 - [ ] Extend traffic-path verification to arbitrary app-specific requests and repeated baseline/latency/bandwidth/recovery experiments.
 - [ ] Run real app-request baseline, latency, bandwidth, packet-loss, outage, and recovery experiments; record requested vs verified conditions. Delay/bandwidth control readback exists, but packet loss and outage are not implemented, and `constraints_applied=false` remains until the full persona is enforced.
 - [ ] Add supported RAM/storage/CPU pressure controls or report those constraints as unsupported.
