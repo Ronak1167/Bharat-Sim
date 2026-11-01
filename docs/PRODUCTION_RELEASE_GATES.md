@@ -11,7 +11,9 @@ This document is the release checklist for turning BharatSim from a credible loc
 - common1 has the private `bharatsim` schema, RLS enabled on its tables, no schema USAGE for `anon`/`authenticated`, and the private `bharatsim-private` bucket. The signed-upload size migration is applied. Per-user run quotas are now enforced in code; live common1 quota-row locking is not yet verified because the Vercel API database connection is not configured.
 - Vercel frontend has the correct public common1 URL/publishable key and target-specific API base URLs. Backend has the common1 URL, required Supabase JWT auth, private bucket name, CORS origins, and fail-closed Production mode; Preview is explicitly Development-only.
 - Production Vercel is still missing `BHARATSIM_DATABASE_URL` and `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`). The worker token and Sarvam key are also not configured. The API intentionally cannot be considered production-ready without the first two.
-- Vercel SSO protection remains enabled and deployment builds are currently blocked by the team's `build-rate-limit`. The latest production aliases still point to an older commit.
+- Both Vercel production deployments are READY and their stable aliases are assigned, but they currently serve commit `2b125971f8ab6c7c0e943d57790b4ae631021dbd`; GitHub `main` is two commits ahead at `453e417be76562288afc956e545c2d5822643e07`. Vercel's latest GitHub deployment checks report `build-rate-limit`, so the current main revision and PR previews have not been deployed.
+- Vercel SSO protection remains enabled. The API's production runtime is not operationally verified and its code will fail closed until `BHARATSIM_DATABASE_URL` and `SUPABASE_SECRET_KEY` (or the legacy service-role key) are configured. The frontend's production Supabase URL/publishable key and API base URL are configured.
+- Production APK worker claims now fail closed unless `BHARATSIM_PUBLIC_APK_EXECUTION_ENABLED`, `BHARATSIM_WORKER_ISOLATION_ATTESTED`, and `BHARATSIM_WORKER_EGRESS_RESTRICTED` are all true. All three production Vercel flags are explicitly set to `false`; no worker token or isolated worker host is configured.
 - No isolated production Android worker host has been provisioned. See `docs/WORKER_HOST_SETUP.md` and the systemd templates in `deploy/`.
 - The code and CI implement the signed TUS upload path, but no live Vercel-to-common1 upload has been verified. No arbitrary APK execution or production release is claimed.
 ## P0 — Safety and tenant boundaries
@@ -32,23 +34,23 @@ This document is the release checklist for turning BharatSim from a credible loc
 
 **Recent implementation:** the run detail page now exports an owner-scoped JSON report with SHA-256 integrity metadata. This is a download/export capability, not yet private object-storage retention or a CI artifact manifest for every customer run.
 
-- [ ] Maintain a real disposable-emulator CI journey: upload APK → validate/hash → queue → lease → install/launch → collect logcat → Appium assertions → authenticated callback → persisted report.
+- [x] Maintain a real disposable-emulator CI journey: upload APK → validate/hash → queue → lease → install/launch → collect logcat → Appium assertions → authenticated callback → persisted report. Verified by GitHub Actions run 41328703086 using a source-built fixture APK; see the hashed CI evidence artifact. This does not validate arbitrary customer APKs.
 - [ ] Add negative real-worker journeys for invalid APK/manifest, install failure, launch failure, app crash, ANR/timeout, worker termination, expired lease, duplicate/stale callback and retry exhaustion.
 - [ ] Test persistence across API restart for run state, worker heartbeat state, report JSON, screenshots/logs and artifact metadata. Include crash/restart during an active lease.
 - [ ] Distinguish procedure status from app verdict. A smoke runner completing is not equivalent to an app journey passing. Show each authored assertion as pass/fail/not-run with evidence and timestamps.
 - [ ] Record the exact APK SHA-256, emulator image/API, OS/worker revision, test profile, requested controls, observed controls, request measurements, retry counts, start/end times and report schema version.
 - [ ] Keep baseline and constrained measurements paired on the same transport and endpoint. Use repeated samples and report medians/spread, sample count, failures and environmental caveats.
-- [ ] For every control, distinguish requested, applied/read back, traffic-path verified and unsupported. A console setting alone does not prove the app's request used that path.
-- [ ] Keep fixture/test data unmistakably labelled as fixture evidence. Never present fixture metrics as customer results or general device-population claims.
+- [x] For every control, distinguish requested, applied/read back, traffic-path verified and unsupported. The CI proxy records profile generation/readback and per-connection upstream/byte evidence; the worker report does not claim arbitrary-app traffic verification. A console setting alone does not prove the app's request used that path.
+- [x] Keep fixture/test data unmistakably labelled as fixture evidence. The README, Appium report and artifact manifest identify the source-built fixture and explicitly limit the claim to that fixture; never present fixture metrics as customer results or general device-population claims.
 
 **Acceptance evidence:** downloadable report and CI artifacts generated from the same run, with hashes and a clear provenance chain; a clean run and a deliberately failing run both reach correct terminal states.
 
 ## P0 — Honest constraint support
 
-- [ ] Complete repeatable latency-only and bandwidth-only traffic-path experiments on the supported emulator transports. Assert expected direction of effect using measured requests and verify reset even on failure.
-- [ ] Implement and verify packet loss, outage/recovery and any advertised jitter controls; until then, mark them unsupported in both API capabilities and UI.
-- [ ] Implement resource pressure controls (CPU/RAM/storage/battery) with observed state and cleanup, or keep them clearly unsupported. Do not infer low-storage or low-memory behavior from a persona label alone.
-- [ ] Validate the declared profile on at least one physical low-cost Android device before claiming physical-device fidelity. Keep emulator and physical-device evidence separate.
+- [x] Complete repeatable latency-only and bandwidth-only traffic-path experiments on the CI emulator's active Wi-Fi transport using the allowlisted CONNECT proxy. Run 41328703086 verified three samples per profile, pinned upstream IP, 64,000-byte responses, 150.5 ms injected RTT, 384 kbps bandwidth shaping and reset-to-baseline readback. This is fixture-only evidence, not proof for arbitrary uploaded APKs.
+- [x] Packet loss and outage/recovery are explicitly marked unsupported in the API capability contract and dashboard. No jitter control is advertised; do not imply that these conditions are simulated.
+- [x] Resource support is explicit in the API and dashboard: battery saver and bounded storage pressure are supported; upload bandwidth is control-plane-verifiable only; RAM is report-only; CPU pressure is unsupported. Do not infer low-storage or low-memory behavior from a persona label alone.
+- [x] Physical-device fidelity is explicitly not claimed; the README and capability contract limit current evidence to disposable Android emulators. A physical low-cost device validation is still required before making any physical-device fidelity claim.
 - [ ] Add app-specific journey authoring with selectors, assertions, waits, screenshots, error-state checks and deterministic teardown. Document unsupported apps and Appium/UiAutomator2 limitations.
 
 **Acceptance evidence:** profile-by-profile tests and reports with requested-versus-observed values; all claimed controls have automated regression tests; reset is verified in a cleanup path.
@@ -56,7 +58,7 @@ This document is the release checklist for turning BharatSim from a credible loc
 ## P1 — Production operation
 
 - [ ] Replace SQLite/local filesystem assumptions with a production database, migrations, durable job queue, and private artifact storage before horizontally scaling API/worker instances.
-- [ ] Add readiness checks that accurately describe required dependencies and separate API readiness from worker availability. A ready API must not imply that an execution worker is online.
+- [x] Add readiness checks that accurately describe required dependencies and separate API readiness from worker availability. `/health/ready` exposes API readiness and execution readiness separately; automated tests cover database unavailable, worker offline, worker online and worker not configured.
 - [ ] Add structured logs, metrics, alerts, backup/restore drills, retention jobs, incident procedures, rate limiting, TLS and secret rotation.
 - [ ] Configure both Vercel projects with the runtime's exact environment-variable names, cross-origin API URL/CORS, common1 Transaction-pooler database URL, server-only Supabase secret key, and verified Supabase Auth; deploy the API, frontend and isolated worker to a controlled environment; verify HTTPS, auth, persistence after restart, health/readiness, worker heartbeat, upload-to-report flow and deployed commit SHA from the public URL.
 - [ ] Add browser E2E for APK selection/upload, queued → running → report states, worker offline, API errors, narrow mobile widths, keyboard/focus/accessibility and empty/error/loading states.

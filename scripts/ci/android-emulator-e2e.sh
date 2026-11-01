@@ -25,15 +25,78 @@ export BHARATSIM_WORKER_TOKEN="$(python -c 'import secrets; print(secrets.token_
 export BHARATSIM_DATA_DIR="$RUNNER_TEMP/bharatsim-api-data"
 
 mkdir -p artifacts
+export RUN_STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+python - <<'PY'
+import json
+import os
+import platform
+import subprocess
+from pathlib import Path
+
+def adb_property(name):
+    result = subprocess.run(
+        ["adb", "-s", "emulator-5554", "shell", "getprop", name],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+metadata = {
+    "schema_version": "1.0",
+    "started_at_utc": os.environ["RUN_STARTED_AT_UTC"],
+    "worker_revision": os.environ.get("GITHUB_SHA"),
+    "runner_os": platform.platform(),
+    "python_version": platform.python_version(),
+    "emulator": {
+        "system_image": "system-images;android-" + os.environ.get("ANDROID_API_LEVEL", "35") + ";" + os.environ.get("ANDROID_SYSTEM_IMAGE_TARGET", "google_apis") + ";" + os.environ.get("ANDROID_ARCH", "x86_64"),
+        "api_level": adb_property("ro.build.version.sdk"),
+        "release": adb_property("ro.build.version.release"),
+        "build_fingerprint": adb_property("ro.build.fingerprint"),
+        "model": adb_property("ro.product.model"),
+    },
+    "worker": {
+        "id": "ci-emulator-worker",
+        "poll_seconds": 1,
+        "smoke_duration_seconds": 20,
+    },
+    "fixture": {
+        "apk_package": "org.bharatsim.smokeapp",
+        "asset_host": "raw.githubusercontent.com",
+        "asset_size_bytes": 256000,
+        "range_bytes_per_probe": 64000,
+    },
+    "network_profiles": {
+        "baseline": {"delay_ms": 0, "rate_kbps": 0},
+        "latency_only": {"delay_ms": 150, "rate_kbps": 0},
+        "bandwidth_only": {"delay_ms": 0, "rate_kbps": 384},
+    },
+}
+Path("artifacts/run-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+PY
 API_PID=
 WORKER_PID=
 APPIUM_PID=
 cleanup() {
-  # Always restore network controls, even when Appium assertions fail.
+  # Always restore emulator controls and the fixture proxy, even when assertions fail.
   adb -s emulator-5554 emu network delay none >/dev/null 2>&1 || true
   adb -s emulator-5554 emu network speed full >/dev/null 2>&1 || true
   adb -s emulator-5554 shell svc wifi enable >/dev/null 2>&1 || true
   adb -s emulator-5554 shell svc data enable >/dev/null 2>&1 || true
+  curl --silent --show-error --max-time 3 -X POST http://127.0.0.1:8889/reset >/dev/null 2>&1 || true
+  if [ -f artifacts/run-metadata.json ]; then
+    python - <<'PY' || true
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path("artifacts/run-metadata.json")
+metadata = json.loads(path.read_text())
+finished = datetime.now(timezone.utc)
+started = datetime.fromisoformat(metadata["started_at_utc"].replace("Z", "+00:00"))
+metadata["finished_at_utc"] = finished.isoformat()
+metadata["duration_seconds"] = round((finished - started).total_seconds(), 3)
+path.write_text(json.dumps(metadata, indent=2) + "\n")
+PY
+  fi
   [ -z "$APPIUM_PID" ] || kill "$APPIUM_PID" 2>/dev/null || true
   [ -z "$WORKER_PID" ] || kill "$WORKER_PID" 2>/dev/null || true
   [ -z "$API_PID" ] || kill "$API_PID" 2>/dev/null || true
@@ -41,8 +104,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The fixture uses a CI-host-resolved IPv4 address and validates TLS against the
-# HTTPS hostname, so the real transfer does not depend on emulator DNS resolution.
+# The worker smoke run below exercises its own emulator-console condition
+# controls. The separate Appium fixture later uses the host-side CONNECT proxy,
+# which pins the upstream IP and preserves TLS hostname validation.
 
 (cd backend && exec uvicorn app.main:app --host 0.0.0.0 --port 8000) > artifacts/api.log 2>&1 &
 API_PID=$!
@@ -312,10 +376,10 @@ print(json.dumps({"status": final["status"], "fixture_kind": "intentionally_inva
                   "runner_return_code": result.get("runner_return_code"), "error": result.get("error")}, indent=2))
 PYNEG
 
-# The Appium journey runs a warm-up plus three baseline, three latency-only,
-# and three bandwidth-only HTTP transfers of a controlled payload through the
-# emulator network stack, then verifies the emulator controls reset to defaults.
-# This deterministically validates emulator shaping; it does not claim public-Internet performance.
+# The Appium journey runs a warm-up plus repeated baseline, latency-only and
+# bandwidth-only HTTPS transfers through the allowlisted host CONNECT proxy.
+# It verifies the proxy event, upstream IP, response bytes, measured deltas and
+# reset readback. This proves the fixture path only, not arbitrary customer APKs.
 adb install smoke-android/app/build/outputs/apk/debug/app-debug.apk
 
 # A hosted Pixel emulator can occasionally leave a system "launcher isn't
