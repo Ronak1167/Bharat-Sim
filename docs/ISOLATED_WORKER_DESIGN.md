@@ -17,6 +17,16 @@ Firecracker is selected over a plain Docker container because uploaded APKs are 
 - [Appium documentation](https://appium.io/docs/en/latest/) — existing open-source Android UI automation stack.
 - [Android application sandbox](https://source.android.com/docs/security/app-sandbox) — Android's per-app UID/process isolation; it does not isolate an uploaded APK from the worker host.
 
+## Security advisory and version floor
+
+Before provisioning any worker host, select a currently supported Firecracker release and pin the exact VMM and matching jailer binaries by version and checksum. **Do not deploy Firecracker v1.13.1 or earlier, or v1.14.0**: AWS disclosed CVE-2026-1386, an arbitrary host-file-overwrite issue in the jailer under certain symlink conditions. The published fixed versions are v1.13.2 and v1.14.1. Prefer a newer supported patched release after checking upstream advisories; verify that the jailer and statically linked Firecracker binary are from the same release. Keep the jailer directory root-owned and inaccessible to untrusted users (for example, mode 0700), and ensure all jailer input paths and parents are trusted and non-writable by unprivileged users.
+
+- [AWS security bulletin: CVE-2026-1386 and fixed versions](https://aws.amazon.com/security/security-bulletins/2026-003-AWS/)
+- [Firecracker production host setup](https://github.com/firecracker-microvm/firecracker/blob/main/docs/prod-host-setup.md)
+- [Firecracker jailer trust and path requirements](https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md)
+
+This is a deployment acceptance requirement, not a claim that BharatSim currently runs Firecracker. No worker host has yet been provisioned.
+
 ## Target job lifecycle
 
 1. API authenticates the user, checks quota, validates APK metadata and creates a tenant-owned run.
