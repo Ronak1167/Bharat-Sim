@@ -1,0 +1,33 @@
+[Unit]
+Description=BharatSim Android execution worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=bharatsim
+Group=bharatsim
+WorkingDirectory=/opt/bharatsim
+EnvironmentFile=/etc/bharatsim/worker.env
+Environment=HOME=/var/lib/bharatsim
+Environment=ANDROID_HOME=/opt/android-sdk
+Environment=ANDROID_SDK_ROOT=/opt/android-sdk
+Environment=ANDROID_AVD_HOME=/var/lib/bharatsim/avd
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/bharatsim/worker/agent.py
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bharatsim /tmp
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=4G
+CPUQuota=300%
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target
