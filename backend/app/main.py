@@ -202,6 +202,20 @@ def create_private_upload_url(object_path: str) -> str:
         connection.close()
 
 
+def build_tus_signed_upload_config(signed_url: str) -> dict[str, str]:
+    """Convert a standard signed-upload URL into Supabase's signed TUS endpoint/token pair."""
+    parsed = urlsplit(signed_url)
+    token = parse_qs(parsed.query).get("token", [None])[0]
+    if parsed.scheme != "https" or not parsed.hostname or not isinstance(token, str) or len(token) < 32:
+        raise RuntimeError("Supabase returned an invalid signed upload capability")
+    storage_host = parsed.hostname
+    if storage_host.endswith(".supabase.co"):
+        storage_host = storage_host.removesuffix(".supabase.co") + ".storage.supabase.co"
+    return {
+        "upload_token": token,
+        "tus_endpoint": f"https://{storage_host}/storage/v1/upload/resumable/sign",
+    }
+
 def private_object_size(object_path: str) -> int | None:
     """Read object size using a server-authenticated HEAD request."""
     connection, endpoint = _storage_connection_and_path(object_path)
@@ -708,6 +722,7 @@ def sign_apk_upload(payload: SignedUploadRequest, request: Request):
     object_path = f"runs/{run_id}/input.apk"
     try:
         signed_url = create_private_upload_url(object_path)
+        upload_capability = build_tus_signed_upload_config(signed_url)
     except Exception:
         raise HTTPException(status_code=503, detail="Private APK upload could not be prepared. No run was queued.")
     created = utcnow()
@@ -722,10 +737,11 @@ def sign_apk_upload(payload: SignedUploadRequest, request: Request):
         raise
     return {
         "run_id": run_id,
-        "signed_url": signed_url,
+        "upload_token": upload_capability["upload_token"],
+        "tus_endpoint": upload_capability["tus_endpoint"],
         "object_path": object_path,
         "expires_in_seconds": 7200,
-        "message": "A private upload URL is ready. Upload the APK directly to storage, then confirm the upload.",
+        "message": "A resumable private upload is ready. Upload the APK in retryable chunks, then confirm the upload.",
     }
 
 
