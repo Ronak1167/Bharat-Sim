@@ -1,30 +1,29 @@
 # BharatSim Supabase completion audit — latest revalidation (2026-11-01)
 
-This addendum supersedes older status statements below where the live repository or connected Supabase state has changed. It records read-only checks against the connected project and the merged GitHub implementation. It does not imply that the application is deployed or production-ready.
+This addendum supersedes older status statements below where the live repository or connected Supabase/Vercel state has changed. It records read-only checks against the connected services. It does not imply that the application is production-ready.
 
 ## Current verified state
 
-- Connected Supabase project `common 1` (project ref `hkyieaovolkethovyenb`) is `ACTIVE_HEALTHY` in `ap-south-1`. It contains a separate `bharatsim` schema alongside an existing `genomeguard` schema. Do not modify GenomeGuard objects as part of BharatSim work.
-- The `bharatsim` schema has seven tables: `runs`, `analyses`, `workers`, `run_events`, `artifacts`, `quotas`, and `audit_events`. RLS is enabled. Read-only privilege checks show `anon` and `authenticated` have no schema USAGE and no table privileges; `service_role` has the required table privileges. The schema is therefore not directly exposed to browser roles.
-- The private Storage bucket `bharatsim-private` exists, has `public=false`, a 150 MiB file limit, and APK MIME allow-list. It currently contains zero objects. This confirms bucket configuration, not that the running API is configured with its server-only service-role credential.
-- Remote migration history includes `20261027054905_bharatsim_core`, `20261027061609_bharatsim_fk_indexes`, and `20261030181640_bharatsim_private_apk_storage_bucket`.
-- The Supabase Security Advisor reports informational `rls_enabled_no_policy` findings for the private BharatSim tables. Because browser roles have no schema usage/table grants, do not add permissive policies merely to silence the informational lint. If the schema is ever exposed to client roles, add tested least-privilege RLS policies first.
-- GitHub main now includes optional Supabase Auth JWT verification, owner-scoped run/analysis access, cross-user regression coverage, owner-scoped run deletion, and authenticated integrity-checked report export. The frontend has optional Supabase email/password sign-in. These are code and CI facts; they do not prove live Auth provider configuration or a deployed user session.
-- The run deletion flow refuses to interrupt leased/running jobs, cleans up the associated APK and run-linked analyses, and retains a cancelled record if storage cleanup fails so the owner can retry. Report export is generated from bounded database JSON and includes a stable report SHA-256 plus an export ETag. It is not yet a separate durable report object.
-- GitHub CI passed on main after these changes, including backend tests, PostgreSQL integration, frontend build/E2E, worker guards, and container smoke tests.
+- Connected Supabase project `common 1` (`hkyieaovolkethovyenb`) is `ACTIVE_HEALTHY` in `ap-south-1`, PostgreSQL 17.11.0.003. The shared project also contains GenomeGuard objects; do not modify those as part of BharatSim work.
+- The private `bharatsim` schema has seven application tables: `runs`, `analyses`, `workers`, `run_events`, `artifacts`, `quotas`, and `audit_events`. RLS is enabled. `anon` and `authenticated` have no schema USAGE or table privileges; checked server roles `service_role` and `postgres` have access. Keep the schema server-only.
+- Remote migration history includes BharatSim core `20261027054905`, FK indexes `20261027061609`, private APK bucket `20261030181640`, and signed-upload sizes `20261101042942`. The shared project's history also includes GenomeGuard migrations; **do not run `supabase db push` from this repository against common1** without reconciling the entire shared history.
+- The `bharatsim-private` Storage bucket has `public=false`, a 150 MiB limit, and APK/ZIP/octet-stream MIME allow-list. It currently has zero objects. The Auth users table currently has zero users. This verifies configuration only, not a successful deployed Auth or Storage journey.
+- Supabase Security Advisor INFO-level `rls_enabled_no_policy` findings apply to private schemas whose browser roles have no access. Do not add broad client policies/grants merely to silence these notices.
+- GitHub main includes the Supabase Auth email/password UI, asymmetric JWT verification, owner-scoped routes, category-aware planner, and owner-scoped lifecycle timeline. The current main SHA is `6cf8799ebfe9c9dcf004f4f31888e6043256bff0`; the test-only React `act()` setup change is being validated. The immediately preceding application/docs revision `aa960a6be94ce029aefe23f1fc75eb5da6eafb35` passed CI and dependency audit.
+- The latest successful main-branch Android emulator run [41331104452](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41331104452) passed on code commit `ee0beea4495eb41fc27003ea96585f8413ddd77b`. It proves only the source-built fixture path: repeated 64 KB HTTPS samples, pinned upstream IP, 384 kbps bandwidth shaping, 150.41–150.43 ms injected latency, and reset-to-baseline. It does not prove arbitrary APK traffic or physical-device fidelity.
+- The frontend Vercel project exists at `https://vercel.com/jyc-website/bharat-sim-81g2`; its Production deployment is READY on `3ed44668d4d13c49648337aaba7e098f26e07045` and includes the current application code. The backend Vercel project exists at `https://vercel.com/jyc-website/bharat-sim`, but Production still serves old commit `2b125971f8ab6c7c0e943d57790b4ae631021dbd` and is not compatible with the latest planner/audit UI.
+- Backend Production lacks `BHARATSIM_DATABASE_URL` and `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`). The current backend deliberately fails closed at startup without these. No live PostgreSQL persistence, Auth lifecycle, private APK upload, worker lease, or deployed upload-to-report journey has been verified. The production worker token/host are absent and the worker isolation/egress flags remain false.
+- Vercel rejected a direct deployment request with HTTP 402 `api-deployments-free-per-day` after the 100-deployments/day allowance was exceeded (retry-after 24 hours). Git integration has deployed the frontend, but the backend remains stale. Both projects retain SSO protection for non-custom domains.
 
 ## Still unverified / release blockers
 
-- No BharatSim production service or public URL is configured in the connected Render/Vercel accounts.
-- The API has not been shown using the live `BHARATSIM_DATABASE_URL` against `common 1`; the local default remains SQLite.
-- The live `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Auth provider settings, email-confirmation/redirect configuration, and deployed frontend publishable key have not been validated as one end-to-end deployment.
-- The private bucket currently has no objects; APK upload/download/delete has not been demonstrated against the live bucket from the deployed API.
-- Reports, logcat, screenshots, and Appium evidence are not yet stored as durable private objects with lifecycle/retention policies.
-- VM-grade disposable APK execution, default-deny egress, enforced CPU/RAM/disk/process quotas, active worker cancellation with child-process teardown, background retention, abuse controls, and complete audit logging remain unimplemented.
-- The latest Android fixture bandwidth probe candidate is still under CI revalidation; do not claim measured download bandwidth or arbitrary-app traffic shaping until the current candidate produces repeated traffic-path evidence and verified reset.
-- Physical low-cost device fidelity and Sarvam translation are not verified.
+- Add the exact common1 Transaction Pooler URI (`sslmode=require`) and server-only Supabase secret directly to backend Vercel Production. Never place these credentials in browser variables, GitHub, or chat.
+- Verify `/health/ready`, a PostgreSQL create/read/delete round trip across separate API invocations, Auth sign-up/sign-in/refresh/expiry/sign-out, and private Storage upload/verify/download/delete after credentials are configured.
+- Provision a disposable VM-grade Android worker with default-deny egress, resource quotas, process-tree cancellation and cleanup. Only then configure `BHARATSIM_WORKER_TOKEN` and prove a real authenticated lease-to-report journey.
+- Complete cross-user denial tests for every customer-data route, negative worker journeys, durable report/log/screenshot retention, abuse controls and a threat-model review.
+- Keep packet loss/outage/recovery and CPU pressure marked unsupported; keep physical-device fidelity unclaimed until tested on a low-cost physical device.
 
-**Release decision:** keep BharatSim labelled MVP / controlled beta. Do not expose public arbitrary-APK execution until isolation, live tenant/Auth configuration, quotas, artifact lifecycle, and deployment evidence are complete.
+**Release decision:** keep BharatSim labelled MVP / controlled beta. Do not expose public arbitrary-APK execution until live database/Auth/Storage, worker isolation, tenant boundaries, and production deployment evidence are complete.
 
 ---
 
