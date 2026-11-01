@@ -1,5 +1,22 @@
 # Production release gates
 
+## Re-verified status — 2026-11-02
+
+This is a fresh infrastructure and release-gate inspection, not a production acceptance sign-off.
+
+- GitHub `main` was `166cc95c07703df77bb53403ff4ad83cb32277bd` at inspection. CI passed on that exact revision ([41340796607](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41340796607)); dependency security audit passed ([41340796665](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41340796665)). The Android emulator workflow passed on application-code commit `beb2209bba23499dde05b32cbf78e42dc263db01` ([41340287388](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41340287388)); later commits in that verification chain are documentation-only.
+- Supabase project `common 1` (`hkyieaovolkethovyenb`) is `ACTIVE_HEALTHY` on PostgreSQL 17.11. The seven `bharatsim` tables exist with RLS enabled; all currently report zero rows. A read-only count also returned zero Auth users, zero runs and zero artifacts. Migrations include the BharatSim core, FK indexes, private APK bucket and signed-upload size migrations.
+- The Supabase Security Advisor currently reports 30 INFO-level `rls_enabled_no_policy` findings across private `bharatsim` and `genomeguard` schemas. Do not add public policies to silence this finding: verify schema USAGE/table grants and keep these tables server-only. This is distinct from any future intentional browser access model.
+- A fresh, non-decrypted Vercel inventory for backend project `bharat-sim` (`prj_ERsWb6vkjZ6rrch2DbQDk0z0nMXA`) lists the Supabase URL and Auth/storage configuration, but does **not** list `BHARATSIM_DATABASE_URL`, `SUPABASE_SECRET_KEY`, or `SUPABASE_SERVICE_ROLE_KEY`. The inventory reports zero hidden Production variables. This is a finding about this exact project/team scope, not a claim about variables in another project or team. No secret values were decrypted or read.
+- The same inventory shows `BHARATSIM_AUTH_REQUIRED=true` and the three public-execution/isolation/egress gates all `false`. Keep them false until the worker is provisioned and independently tested.
+- Vercel Production remains mismatched: backend production was observed at `2b125971f8ab6c7c0e943d57790b4ae631021dbd`; frontend production was observed at `3ed44668d4d13c49648337aaba7e098f26e07045`. READY branch previews are not production promotions. The backend project reports `live=false` and SSO protection remains enabled for non-custom domains.
+- Vercel previously rejected a backend deployment with `api-deployments-free-per-day` after the team exceeded 100 deployments/day. Do not repeatedly retry or bypass the quota; re-check the actual quota and project state before one controlled production deployment attempt.
+- Firecracker host provisioning is still not done. Before selecting a release, enforce the patched-version floor for CVE-2026-1386: do not deploy v1.13.1 or earlier, or v1.14.0; AWS lists v1.13.2 and v1.14.1 as fixed. Prefer a currently supported newer release and pin the matching VMM/jailer pair and checksums. See [AWS bulletin](https://aws.amazon.com/security/security-bulletins/2026-003-AWS/) and [worker design](ISOLATED_WORKER_DESIGN.md).
+
+**Decision:** controlled-beta MVP only. No production launch and no arbitrary public APK execution. Production DB connectivity, Auth lifecycle, private Storage round trip, isolated worker host, egress policy, durable report retention, deployed end-to-end acceptance and physical-device scope remain unverified.
+
+---
+
 This document is the release checklist for turning BharatSim from a credible local/CI prototype into a safe, supportable Android resilience-testing service. It deliberately separates **implemented**, **measured**, **simulated**, and **not yet supported** behavior. A checked box requires a reproducible artifact or test result from the target revision; a code path existing is not proof that the feature works end to end.
 
 ## Current release decision
