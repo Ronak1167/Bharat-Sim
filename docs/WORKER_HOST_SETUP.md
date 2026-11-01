@@ -49,14 +49,16 @@ The API's production alias currently has Vercel SSO protection and production da
 
 ## 4. systemd service example
 
-Copy deploy/bharatsim-worker.service.example to /etc/systemd/system/bharatsim-worker.service, adjust paths and account permissions, then run:
+Copy both deploy/bharatsim-emulator.service.example and deploy/bharatsim-worker.service.example to /etc/systemd/system/ using the filenames bharatsim-emulator.service and bharatsim-worker.service. Adjust paths, AVD name, account permissions and KVM access, then run:
 
     sudo systemctl daemon-reload
+    sudo systemctl enable --now bharatsim-emulator
     sudo systemctl enable --now bharatsim-worker
-    sudo systemctl status bharatsim-worker
+    sudo systemctl status bharatsim-emulator bharatsim-worker
+    journalctl -u bharatsim-emulator -f
     journalctl -u bharatsim-worker -f
 
-The service does not start or provision the emulator. Keep the emulator process under a separate supervisor and make the worker service depend on it. Configure the Android SDK and AVD directories as writable only by the dedicated account.
+The emulator unit starts a clean AVD and waits for boot completion; the worker unit requires the emulator unit and starts the polling agent only after it is ready. The emulator service uses -wipe-data on process start, not after each job. For stronger per-job isolation, revert a VM snapshot or destroy/recreate the VM after each APK. Configure the Android SDK read-only and AVD/home directories writable only by the dedicated account.
 
 ## 5. Network isolation is a release gate
 
