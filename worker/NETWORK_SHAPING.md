@@ -22,3 +22,8 @@ sudo -E python worker/network_shaper.py clear --interface veth-bs-run01
 ```
 
 The apply action now parses the active `tc` qdisc report and compares reported delay, jitter, loss and rate against the requested profile. It exits non-zero when parameters are missing or mismatch. The `verify` action checks qdisc presence only because it does not receive a target profile; it does not verify end-to-end traffic. Even a `parameters_match` result proves only that `tc` reports the requested qdisc settings on this interface—not that Android/emulator traffic traverses it or that a remote endpoint experienced those exact values. Before integrating into a run, route emulator traffic through the namespace, probe a known endpoint, record measured latency/throughput/loss and store the result with the run ID.
+
+
+## Reproducible emulator bandwidth profiles
+
+Android Emulator named presets are image/version dependent. For example, current API 35 images can report a UMTS cap of 384 Kbit/s even when older documentation lists a different UMTS rate. Do not infer the applied rate from the preset name. The CI Appium fixture now uses an explicit `1920:1920` console value (1.92 Mbit/s upload and download) and verifies console readback plus the measured HTTPS transfer. This is a deterministic constrained-throughput smoke profile, not a claim about every Indian carrier or real-world 4G service.
