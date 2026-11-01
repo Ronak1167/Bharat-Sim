@@ -6,7 +6,7 @@ This guide prepares a dedicated Linux VM to run the existing authenticated Andro
 
 Use a disposable Ubuntu 24.04 x86_64 VM with:
 
-- 4 vCPU and at least 8 GB RAM for one Android Emulator; more capacity is needed for parallel devices.
+- 4 vCPU and at least 12 GB RAM for one Android Emulator plus the worker/API tooling; more capacity is needed for parallel devices.
 - KVM hardware virtualization exposed to the VM (/dev/kvm readable by the worker account).
 - At least 30 GB of disposable disk for Android SDK, system images, AVD data, APKs and logs.
 - A dedicated unprivileged Linux account named bharatsim.
