@@ -69,3 +69,8 @@ These references are guidance, not a certification of BharatSim. Any future APK 
 ## Signed APK uploads
 
 When private Storage is configured, the API creates a short-lived signed upload URL for one generated object path. The browser uploads APK bytes directly to the private bucket, so the serverless API does not receive the APK body. Treat the signed URL as a bearer capability and do not log or share it. The API checks the stored object size before queueing; the isolated worker independently verifies the SHA-256 and APK archive before ADB execution. Without Storage credentials, the production dashboard blocks APKs above 4 MB rather than sending them into Vercel's request-body limit.
+
+
+## Private Supabase schema and RLS advisor findings
+
+The `bharatsim` schema is server-only: `anon` and `authenticated` have no `USAGE` privilege on the schema, while the backend service role has the required access. RLS is enabled on the BharatSim tables and there are intentionally no browser-facing table policies. Supabase's `rls_enabled_no_policy` advisor therefore reports these tables as informational findings; do not add broad `anon`/`authenticated` policies merely to silence the advisor. Any future browser-facing data access must use narrowly scoped ownership policies and be reviewed separately. This note applies only to `bharatsim`; do not change the shared `genomeguard` schema as part of BharatSim work.
