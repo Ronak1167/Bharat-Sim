@@ -12,7 +12,7 @@ import time
 import uuid
 import zipfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, quote, urlsplit
@@ -43,9 +43,13 @@ DB_PATH = DATA_DIR / "bharatsim.sqlite3"
 DATABASE_URL = os.getenv("BHARATSIM_DATABASE_URL", "").strip()
 APP_ENV = os.getenv("BHARATSIM_ENV", "development").strip().lower()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+# Prefer the modern opaque secret key; retain the legacy service_role JWT as a
+# compatibility fallback while Supabase phases legacy keys out.
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+STORAGE_API_KEY = SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 STORAGE_BUCKET = os.getenv("BHARATSIM_STORAGE_BUCKET", "bharatsim-private").strip()
-STORAGE_ENABLED = bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and STORAGE_BUCKET)
+STORAGE_ENABLED = bool(SUPABASE_URL and STORAGE_API_KEY and STORAGE_BUCKET)
 AUTH_REQUIRED = os.getenv("BHARATSIM_AUTH_REQUIRED", "false").strip().lower() == "true"
 _jwks_client: PyJWKClient | None = None
 
@@ -125,8 +129,9 @@ def validate_runtime_security_config(environment: dict[str, str] | None = None) 
         raise RuntimeError("Production startup blocked: BHARATSIM_API_KEY must contain at least 32 characters when the shared API-key gate is enabled")
     if not values.get("SUPABASE_URL", "").strip().startswith("https://"):
         raise RuntimeError("Production startup blocked: configure SUPABASE_URL for Supabase Auth and Storage")
-    if len(values.get("SUPABASE_SERVICE_ROLE_KEY", "")) < 32:
-        raise RuntimeError("Production startup blocked: configure a server-only SUPABASE_SERVICE_ROLE_KEY for private artifact storage")
+    storage_key = values.get("SUPABASE_SECRET_KEY", "").strip() or values.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if len(storage_key) < 32:
+        raise RuntimeError("Production startup blocked: configure a server-only SUPABASE_SECRET_KEY (preferred) or legacy SUPABASE_SERVICE_ROLE_KEY for private artifact storage")
     if not values.get("BHARATSIM_STORAGE_BUCKET", "bharatsim-private").strip():
         raise RuntimeError("Production startup blocked: configure BHARATSIM_STORAGE_BUCKET")
 
@@ -150,11 +155,15 @@ def _storage_connection_and_path(object_path: str):
 
 
 def _storage_headers(content_type: str = "application/octet-stream") -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+    headers = {
+        "apikey": STORAGE_API_KEY,
         "Content-Type": content_type,
     }
+    # Modern sb_secret_* keys are opaque API keys, not JWTs. Supabase expects
+    # them in the apikey header only; legacy service_role keys remain JWT bearers.
+    if not SUPABASE_SECRET_KEY:
+        headers["Authorization"] = f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
+    return headers
 
 
 def upload_private_object(source: Path, object_path: str) -> None:
@@ -454,12 +463,16 @@ def db():
             from psycopg.rows import dict_row
         except ImportError as exc:
             raise RuntimeError("BHARATSIM_DATABASE_URL requires the psycopg[binary] dependency") from exc
-        raw = psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None, options="-c search_path=bharatsim,public")
+        # Transaction poolers do not preserve session-level settings between
+        # clients. Set the private schema path locally for this transaction only.
+        raw = psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None)
         conn = PostgresCompatConnection(raw)
     else:
         conn = sqlite3.connect(DB_PATH, timeout=15)
         conn.row_factory = sqlite3.Row
     try:
+        if DATABASE_URL:
+            conn.execute("SET LOCAL search_path TO bharatsim, public")
         yield conn
         conn.commit()
     except Exception:
@@ -495,6 +508,12 @@ def init_db() -> None:
             id TEXT PRIMARY KEY, last_seen TEXT NOT NULL, status TEXT NOT NULL,
             current_run_id TEXT
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS quotas (
+            owner_id TEXT PRIMARY KEY,
+            daily_run_limit INTEGER NOT NULL DEFAULT 10 CHECK (daily_run_limit > 0),
+            active_run_limit INTEGER NOT NULL DEFAULT 2 CHECK (active_run_limit > 0),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""")
         # Backward-compatible schema migration for local MVP databases.
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
         migrations = {
@@ -515,6 +534,58 @@ def init_db() -> None:
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {column} {definition}")
 
 init_db()
+
+
+def enforce_run_quota(conn, owner_id: str | None, now: datetime | None = None) -> None:
+    """Serialize per-user run creation and enforce daily/active limits."""
+    if not owner_id:
+        return
+
+    if DATABASE_URL:
+        conn.execute(
+            "INSERT INTO quotas(owner_id) VALUES(?) ON CONFLICT(owner_id) DO NOTHING",
+            (owner_id,),
+        )
+        quota = conn.execute(
+            "SELECT daily_run_limit,active_run_limit FROM quotas WHERE owner_id=? FOR UPDATE",
+            (owner_id,),
+        ).fetchone()
+    else:
+        conn.execute("INSERT OR IGNORE INTO quotas(owner_id) VALUES(?)", (owner_id,))
+        quota = conn.execute(
+            "SELECT daily_run_limit,active_run_limit FROM quotas WHERE owner_id=?",
+            (owner_id,),
+        ).fetchone()
+
+    if not quota:
+        raise HTTPException(status_code=503, detail="Run quota configuration is unavailable.")
+
+    current = now or datetime.now(timezone.utc)
+    current = current.astimezone(timezone.utc)
+    day_start = current.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    daily_count = conn.execute(
+        "SELECT COUNT(*) AS total FROM runs WHERE owner_id=? AND created_at>=?",
+        (owner_id, day_start),
+    ).fetchone()["total"]
+    active_count = conn.execute(
+        "SELECT COUNT(*) AS total FROM runs WHERE owner_id=? AND status IN ('awaiting_worker','queued','leased','running')",
+        (owner_id,),
+    ).fetchone()["total"]
+
+    if active_count >= quota["active_run_limit"]:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Active test-run limit reached ({quota['active_run_limit']}). Wait for a run to finish or delete a queued run.",
+            headers={"Retry-After": "60"},
+        )
+    if daily_count >= quota["daily_run_limit"]:
+        next_day = current.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        retry_after = max(1, int((next_day - current).total_seconds()))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily test-run limit reached ({quota['daily_run_limit']}). Try again after 00:00 UTC.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 def cleanup_expired_uploads() -> None:
@@ -715,9 +786,13 @@ def sign_apk_upload(payload: SignedUploadRequest, request: Request):
         raise HTTPException(status_code=422, detail="Unknown persona_id")
     if payload.size_bytes > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"APK exceeds {MAX_UPLOAD_BYTES // (1024*1024)} MB limit")
+    cleanup_expired_uploads()
     safe_name = payload.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()[:180]
     if not safe_name.lower().endswith(".apk"):
         raise HTTPException(status_code=415, detail="Upload must have an .apk filename")
+    owner_id = getattr(request.state, "owner_id", None)
+    with db() as conn:
+        enforce_run_quota(conn, owner_id, datetime.now(timezone.utc))
     run_id = str(uuid.uuid4())
     object_path = f"runs/{run_id}/input.apk"
     try:
@@ -728,9 +803,10 @@ def sign_apk_upload(payload: SignedUploadRequest, request: Request):
     created = utcnow()
     try:
         with db() as conn:
+            enforce_run_quota(conn, owner_id, datetime.now(timezone.utc))
             conn.execute(
                 "INSERT INTO runs(id,created_at,status,apk_name,apk_sha256,apk_path,persona_id,result_json,error,updated_at,owner_id,apk_storage_path,apk_size_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (run_id, created, "awaiting_worker", safe_name, payload.sha256, None, payload.persona_id, None, None, created, getattr(request.state, "owner_id", None), object_path, payload.size_bytes),
+                (run_id, created, "awaiting_worker", safe_name, payload.sha256, None, payload.persona_id, None, None, created, owner_id, object_path, payload.size_bytes),
             )
     except Exception:
         # The signed URL is short-lived and the object has not been uploaded yet.
@@ -821,6 +897,9 @@ async def create_run(
     cleanup_expired_uploads()
     if persona_id not in PERSONAS:
         raise HTTPException(status_code=422, detail="Unknown persona_id")
+    owner_id = getattr(request.state, "owner_id", None)
+    with db() as conn:
+        enforce_run_quota(conn, owner_id, datetime.now(timezone.utc))
     run_id = str(uuid.uuid4())
     apk_name = None
     apk_hash = None
@@ -871,9 +950,10 @@ async def create_run(
     created = utcnow()
     try:
         with db() as conn:
+            enforce_run_quota(conn, owner_id, datetime.now(timezone.utc))
             conn.execute(
                 "INSERT INTO runs(id,created_at,status,apk_name,apk_sha256,apk_path,persona_id,result_json,error,updated_at,owner_id,apk_storage_path) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (run_id, created, status, apk_name, apk_hash, apk_path, persona_id, None, None, created, getattr(request.state, "owner_id", None), apk_storage_path),
+                (run_id, created, status, apk_name, apk_hash, apk_path, persona_id, None, None, created, owner_id, apk_storage_path),
             )
     except Exception:
         if apk_storage_path:
