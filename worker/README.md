@@ -23,6 +23,10 @@ The repository includes an authenticated polling agent (agent.py) and a bounded 
 
 Configure BHARATSIM_WORKER_TOKEN in the API environment. The token must not be committed to the repository. Start FastAPI as described in the root README. When the token is configured, APK uploads with a valid APK-like archive are queued; they are not considered executed until a worker submits a report.
 
+## Dedicated host deployment
+
+For a reproducible isolated Linux VM setup, Android SDK/AVD provisioning, worker environment file, network-isolation requirements and a hardened systemd service example, see [`docs/WORKER_HOST_SETUP.md`](../docs/WORKER_HOST_SETUP.md) and [`deploy/bharatsim-worker.service.example`](../deploy/bharatsim-worker.service.example). The systemd example runs only the polling agent; the Android Emulator must be supervised separately.
+
 ## Start the worker
 
 From the repository root, configure these environment variables:
