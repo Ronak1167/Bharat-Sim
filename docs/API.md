@@ -16,9 +16,12 @@ FastAPI's interactive schema is available at /docs when the backend is running.
 - DELETE /api/v1/runs/{run_id} — owner-scoped deletion of a run and associated analysis evidence. Queued/awaiting runs are first marked cancelled so a worker cannot claim them during cleanup. Active leased/running jobs return 409 and must finish before deletion. If APK cleanup fails, the cancelled row is retained so deletion can be retried.
 - GET /api/v1/workers — authenticated worker heartbeat summary for the last 90 seconds. It exposes a busy indicator but never another user's current run ID.
 - POST /api/v1/analyze/logs — deterministic analysis of supplied log text.
+- POST /api/v1/translate/report — opt-in Sarvam translation of a user-selected condensed report summary (Hindi, Tamil, or Marathi); requires server-side `SARVAM_API_KEY`.
+- POST /api/v1/uploads/sign — creates a short-lived signed URL for a server-generated path in the private APK bucket; requires Storage credentials and an authenticated user when Auth is enabled.
+- PUT the APK bytes directly to the returned Supabase Storage `signed_url`, then POST /api/v1/runs/{run_id}/upload-complete. The completion endpoint checks the stored object size before queueing; the worker independently verifies the APK SHA-256 before execution.
 - GET /api/v1/analyses — recent saved log analyses.
 
-When `BHARATSIM_AUTH_REQUIRED=true`, customer-data endpoints require a verified Supabase Auth access token in the `Authorization: Bearer` header. The backend validates the JWT against the configured project's JWKS and scopes run/analysis reads, writes, report exports, and run deletion by the verified user UUID. The frontend can use email/password Supabase Auth when its public URL and publishable/legacy anon key are configured.
+When `BHARATSIM_AUTH_REQUIRED=true`, customer-data endpoints require a verified Supabase Auth access token in the `Authorization: Bearer` header. The translation endpoint is covered by the same middleware. Translation is initiated only after an explicit user action and sends a condensed summary, not raw logcat; see [`SARVAM_TRANSLATION.md`](SARVAM_TRANSLATION.md). The backend validates the JWT against the configured project's JWKS and scopes run/analysis reads, writes, report exports, and run deletion by the verified user UUID. The frontend can use email/password Supabase Auth when its public URL and publishable/legacy anon key are configured.
 
 When `BHARATSIM_REQUIRE_API_KEY=true`, `/api/v1` routes additionally require `X-BharatSim-API-Key`. This is an optional shared-key gate for private deployments, not a substitute for multi-user authentication. The shared API key and the Supabase user JWT are separate credentials.
 

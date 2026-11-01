@@ -43,6 +43,7 @@ import FindingCard from "./components/FindingCard";
 import ScoreRing from "./components/ScoreRing";
 import RunDetailView from "./components/RunDetailView";
 import CapabilityPanel from "./components/CapabilityPanel";
+import SarvamTranslation from "./components/SarvamTranslation";
 
 const API_DOCS_URL = API || (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 
@@ -125,13 +126,47 @@ export default function App() {
     setNotice("");
     setBusy(true);
     try {
-      const body = new FormData();
-      body.append("persona_id", selected);
-      if (apk) body.append("apk", apk);
-      const run = await api<Run & { message: string }>("/api/v1/runs", {
-        method: "POST",
-        body
-      });
+      if (!apk) throw new Error("Choose an APK file first.");
+      let run: Run & { message: string };
+      if (capabilities?.direct_apk_upload) {
+        if (!globalThis.crypto?.subtle) throw new Error("Secure file hashing is unavailable in this browser.");
+        const digest = await crypto.subtle.digest("SHA-256", await apk.arrayBuffer());
+        const sha256 = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, "0")).join("");
+        const ticket = await api<{ run_id: string; signed_url: string }>("/api/v1/uploads/sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ persona_id: selected, filename: apk.name, size_bytes: apk.size, sha256 })
+        });
+        try {
+          const uploaded = await fetch(ticket.signed_url, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/vnd.android.package-archive",
+              "x-upsert": "false"
+            },
+            body: apk
+          });
+          if (!uploaded.ok) throw new Error("Private APK upload failed (" + uploaded.status + ").");
+          run = await api<Run & { message: string }>(
+            "/api/v1/runs/" + encodeURIComponent(ticket.run_id) + "/upload-complete",
+            { method: "POST" }
+          );
+        } catch (uploadError) {
+          await api("/api/v1/runs/" + encodeURIComponent(ticket.run_id), { method: "DELETE" }).catch(() => undefined);
+          throw uploadError;
+        }
+      } else {
+        if (import.meta.env.PROD && apk.size > 4 * 1024 * 1024) {
+          throw new Error("Large APK upload is unavailable until private Supabase Storage is configured. This deployment can accept files up to 4 MB.");
+        }
+        const body = new FormData();
+        body.append("persona_id", selected);
+        body.append("apk", apk);
+        run = await api<Run & { message: string }>("/api/v1/runs", {
+          method: "POST",
+          body
+        });
+      }
       setNotice(run.message);
       setApk(null);
       await refresh();
@@ -520,6 +555,7 @@ export default function App() {
                     workers={workers}
                     busy={busy}
                     apiStatus={apiStatus}
+                    directUploadAvailable={Boolean(capabilities?.direct_apk_upload)}
                     onSubmit={submitApk}
                   />
 
@@ -799,6 +835,13 @@ export default function App() {
                           <p key={l}>• {l}</p>
                         ))}
                       </div>
+                      <SarvamTranslation
+                        enabled={Boolean(capabilities?.sarvam_translation)}
+                        text={[
+                          "BharatScore: " + analysis.bharat_score.value + "/100 — " + analysis.bharat_score.label + ".",
+                          ...analysis.findings.slice(0, 5).map((finding) => finding.severity + ": " + finding.title + ". " + finding.explanation + " Recommendation: " + finding.recommendation)
+                        ].join("\n").slice(0, 2000)}
+                      />
                     </>
                   )}
                 </section>

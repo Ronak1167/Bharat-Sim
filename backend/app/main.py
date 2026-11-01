@@ -18,6 +18,7 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, quote, urlsplit
 
 import jwt
+from .sarvam import SarvamProviderError, SarvamRateLimited, translate_report_text
 from jwt import PyJWKClient
 from jwt.exceptions import InvalidTokenError
 
@@ -27,7 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 APP_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("BHARATSIM_DATA_DIR", str(APP_DIR.parent / "data")))
+
+
+def default_data_dir() -> Path:
+    # Vercel's deployment filesystem is read-only; /tmp is the writable scratch area.
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/bharatsim")
+    return APP_DIR.parent / "data"
+
+
+DATA_DIR = Path(os.getenv("BHARATSIM_DATA_DIR", str(default_data_dir())))
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "bharatsim.sqlite3"
 DATABASE_URL = os.getenv("BHARATSIM_DATABASE_URL", "").strip()
@@ -97,25 +107,22 @@ def validate_database_configuration(database_url: str, app_env: str) -> None:
 validate_database_configuration(DATABASE_URL, APP_ENV)
 
 def validate_runtime_security_config(environment: dict[str, str] | None = None) -> None:
-    """Refuse accidental production startup without the documented single-tenant API gate.
+    """Refuse production startup without verified user auth and private server credentials.
 
-    This shared-key gate is a controlled-beta safeguard, not multi-tenant authentication.
-    Production multi-user deployment still requires identity and per-run ownership checks.
+    Supabase JWT verification and owner-scoped queries are the user-data boundary.
+    The optional shared API key is only for private single-tenant gateways.
     """
     values = os.environ if environment is None else environment
     mode = values.get("BHARATSIM_ENV", "development").strip().lower()
     if mode not in {"production", "prod"}:
         return
-    if values.get("BHARATSIM_REQUIRE_API_KEY", "false").strip().lower() != "true":
-        raise RuntimeError(
-            "Production startup blocked: set BHARATSIM_REQUIRE_API_KEY=true and configure a strong server-side key"
-        )
-    if len(values.get("BHARATSIM_API_KEY", "")) < 32:
-        raise RuntimeError(
-            "Production startup blocked: BHARATSIM_API_KEY must contain at least 32 characters"
-        )
+    # Verified Supabase user JWTs are the public-user authentication boundary.
+    # The optional shared API key is intended for private single-tenant deployments
+    # and must never be exposed to browser code.
     if values.get("BHARATSIM_AUTH_REQUIRED", "false").strip().lower() != "true":
         raise RuntimeError("Production startup blocked: enable BHARATSIM_AUTH_REQUIRED=true")
+    if values.get("BHARATSIM_REQUIRE_API_KEY", "false").strip().lower() == "true" and len(values.get("BHARATSIM_API_KEY", "")) < 32:
+        raise RuntimeError("Production startup blocked: BHARATSIM_API_KEY must contain at least 32 characters when the shared API-key gate is enabled")
     if not values.get("SUPABASE_URL", "").strip().startswith("https://"):
         raise RuntimeError("Production startup blocked: configure SUPABASE_URL for Supabase Auth and Storage")
     if len(values.get("SUPABASE_SERVICE_ROLE_KEY", "")) < 32:
@@ -168,6 +175,46 @@ def upload_private_object(source: Path, object_path: str) -> None:
         body = response.read(2048)
         if response.status not in (200, 201):
             raise RuntimeError(f"Supabase Storage upload failed ({response.status}): {body.decode('utf-8', 'replace')}")
+    finally:
+        connection.close()
+
+
+def create_private_upload_url(object_path: str) -> str:
+    """Create a short-lived signed upload URL for a server-generated private object path."""
+    connection, endpoint = _storage_connection_and_path(object_path)
+    signed_endpoint = endpoint.replace("/object/", "/object/upload/sign/", 1)
+    payload = b"{}"
+    headers = _storage_headers("application/json")
+    headers["Content-Length"] = str(len(payload))
+    try:
+        connection.request("POST", signed_endpoint, body=payload, headers=headers)
+        response = connection.getresponse()
+        body = response.read(8192)
+        if response.status != 200:
+            raise RuntimeError(f"Supabase signed upload URL failed ({response.status})")
+        result = json.loads(body.decode("utf-8"))
+        relative_url = result.get("url") if isinstance(result, dict) else None
+        if not isinstance(relative_url, str) or not relative_url.startswith("/object/upload/sign/"):
+            raise RuntimeError("Supabase returned an invalid signed upload URL")
+        # The returned path is relative to /storage/v1. Never accept an upstream host.
+        return f"{SUPABASE_URL}/storage/v1{relative_url}"
+    finally:
+        connection.close()
+
+
+def private_object_size(object_path: str) -> int | None:
+    """Read object size using a server-authenticated HEAD request."""
+    connection, endpoint = _storage_connection_and_path(object_path)
+    try:
+        connection.request("HEAD", endpoint, headers=_storage_headers())
+        response = connection.getresponse()
+        response.read(1024)
+        if response.status == 404:
+            return None
+        if response.status != 200:
+            raise RuntimeError(f"Supabase object verification failed ({response.status})")
+        value = response.getheader("Content-Length")
+        return int(value) if value and value.isdigit() else None
     finally:
         connection.close()
 
@@ -235,7 +282,8 @@ async def enforce_api_authentication(request: Request, call_next):
     protected = (
         request.url.path == "/api/v1/runs"
         or request.url.path.startswith("/api/v1/runs/")
-        or request.url.path in {"/api/v1/analyze/logs", "/api/v1/analyses", "/api/v1/workers"}
+        or request.url.path in {"/api/v1/analyze/logs", "/api/v1/analyses", "/api/v1/workers", "/api/v1/translate/report"}
+        or request.url.path.startswith("/api/v1/uploads/")
     )
     if AUTH_REQUIRED and protected:
         scheme, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -312,6 +360,16 @@ class LogAnalysisRequest(BaseModel):
     persona_id: str = "budget-android"
     run_id: str | None = None
 
+class SarvamTranslationRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    target_language_code: Literal["hi-IN", "ta-IN", "mr-IN"]
+
+class SignedUploadRequest(BaseModel):
+    persona_id: str = "budget-android"
+    filename: str = Field(min_length=5, max_length=255)
+    size_bytes: int = Field(gt=0, le=157286400)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
 class WorkerClaimRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
 
@@ -382,7 +440,7 @@ def db():
             from psycopg.rows import dict_row
         except ImportError as exc:
             raise RuntimeError("BHARATSIM_DATABASE_URL requires the psycopg[binary] dependency") from exc
-        raw = psycopg.connect(DATABASE_URL, row_factory=dict_row, options="-c search_path=bharatsim,public")
+        raw = psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None, options="-c search_path=bharatsim,public")
         conn = PostgresCompatConnection(raw)
     else:
         conn = sqlite3.connect(DB_PATH, timeout=15)
@@ -433,6 +491,7 @@ def init_db() -> None:
             "attempts": "INTEGER NOT NULL DEFAULT 0",
             "owner_id": "TEXT",
             "apk_storage_path": "TEXT",
+            "apk_size_bytes": "INTEGER",
         }
         analysis_columns = {row["name"] for row in conn.execute("PRAGMA table_info(analyses)").fetchall()}
         if "owner_id" not in analysis_columns:
@@ -632,6 +691,108 @@ def create_plan(request: PlanRequest):
     scenarios.sort(key=lambda x: (-x["risk_score"], x["id"]))
     selected = scenarios[:request.max_scenarios]
     return {"generated_at": utcnow(), "strategy": "deterministic-risk-heuristic-v1", "scenarios": selected, "total_candidates": len(scenarios)}
+
+@app.post("/api/v1/uploads/sign")
+def sign_apk_upload(payload: SignedUploadRequest, request: Request):
+    """Create a private, time-limited upload URL so APK bytes bypass Vercel's 4.5 MB function limit."""
+    if not STORAGE_ENABLED:
+        raise HTTPException(status_code=503, detail="Direct private APK uploads are not configured on this server.")
+    if payload.persona_id not in PERSONAS:
+        raise HTTPException(status_code=422, detail="Unknown persona_id")
+    if payload.size_bytes > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"APK exceeds {MAX_UPLOAD_BYTES // (1024*1024)} MB limit")
+    safe_name = payload.filename.replace("\\", "/").rsplit("/", 1)[-1].strip()[:180]
+    if not safe_name.lower().endswith(".apk"):
+        raise HTTPException(status_code=415, detail="Upload must have an .apk filename")
+    run_id = str(uuid.uuid4())
+    object_path = f"runs/{run_id}/input.apk"
+    try:
+        signed_url = create_private_upload_url(object_path)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Private APK upload could not be prepared. No run was queued.")
+    created = utcnow()
+    try:
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO runs(id,created_at,status,apk_name,apk_sha256,apk_path,persona_id,result_json,error,updated_at,owner_id,apk_storage_path,apk_size_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (run_id, created, "awaiting_worker", safe_name, payload.sha256, None, payload.persona_id, None, None, created, getattr(request.state, "owner_id", None), object_path, payload.size_bytes),
+            )
+    except Exception:
+        # The signed URL is short-lived and the object has not been uploaded yet.
+        raise
+    return {
+        "run_id": run_id,
+        "signed_url": signed_url,
+        "object_path": object_path,
+        "expires_in_seconds": 7200,
+        "message": "A private upload URL is ready. Upload the APK directly to storage, then confirm the upload.",
+    }
+
+
+@app.post("/api/v1/runs/{run_id}/upload-complete")
+def complete_apk_upload(run_id: str, request: Request):
+    """Confirm a direct upload by checking the private Storage object's actual byte size."""
+    with db() as conn:
+        if AUTH_REQUIRED:
+            row = conn.execute(
+                "SELECT id,created_at,status,apk_storage_path,apk_size_bytes,apk_name,apk_sha256,persona_id FROM runs WHERE id=? AND owner_id=?",
+                (run_id, request.state.owner_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id,created_at,status,apk_storage_path,apk_size_bytes,apk_name,apk_sha256,persona_id FROM runs WHERE id=?",
+                (run_id,),
+            ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if row["status"] != "awaiting_worker" or not row["apk_storage_path"] or not row["apk_size_bytes"]:
+        raise HTTPException(status_code=409, detail="Run is not waiting for a direct APK upload")
+    try:
+        actual_size = private_object_size(row["apk_storage_path"])
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not verify the private APK upload. Please retry.")
+    if actual_size is None:
+        raise HTTPException(status_code=409, detail="APK upload was not found in private storage yet.")
+    if actual_size != row["apk_size_bytes"]:
+        try:
+            delete_private_object(row["apk_storage_path"])
+        except Exception:
+            pass
+        with db() as conn:
+            conn.execute(
+                "UPDATE runs SET status='failed',error=?,updated_at=? WHERE id=? AND status='awaiting_worker'",
+                ("Uploaded APK size did not match the signed upload request.", utcnow(), run_id),
+            )
+        raise HTTPException(status_code=422, detail="Uploaded APK size did not match the signed upload request.")
+    worker_configured = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32
+    status = "queued" if worker_configured else "awaiting_worker"
+    with db() as conn:
+        if AUTH_REQUIRED:
+            changed = conn.execute(
+                "UPDATE runs SET status=?,updated_at=? WHERE id=? AND owner_id=? AND status='awaiting_worker'",
+                (status, utcnow(), run_id, request.state.owner_id),
+            ).rowcount
+        else:
+            changed = conn.execute(
+                "UPDATE runs SET status=?,updated_at=? WHERE id=? AND status='awaiting_worker'",
+                (status, utcnow(), run_id),
+            ).rowcount
+    if not changed:
+        raise HTTPException(status_code=409, detail="Run changed while the upload was being confirmed.")
+    message = (
+        "APK upload verified in private storage and queued for an authenticated worker."
+        if status == "queued" else
+        "APK upload verified in private storage. This run is awaiting an execution worker."
+    )
+    return {
+        "id": run_id,
+        "created_at": row["created_at"],
+        "status": status,
+        "apk": {"name": row["apk_name"], "sha256": row["apk_sha256"], "size_bytes": actual_size, "uploaded": True},
+        "persona": PERSONAS[row["persona_id"]],
+        "message": message,
+    }
+
 
 @app.post("/api/v1/runs")
 async def create_run(
@@ -1102,11 +1263,30 @@ def list_analyses(request: Request, limit: int = 20):
             rows = conn.execute("SELECT result_json FROM analyses ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     return {"items": [json.loads(row["result_json"]) for row in rows]}
 
+@app.post("/api/v1/translate/report")
+def translate_report(payload: SarvamTranslationRequest):
+    """Translate a user-requested, condensed report summary via Sarvam AI."""
+    if not payload.text.strip():
+        raise HTTPException(status_code=422, detail="Translation text cannot be blank.")
+    if len(os.getenv("SARVAM_API_KEY", "").strip()) < 16:
+        raise HTTPException(status_code=503, detail="Sarvam translation is not configured on this server.")
+    try:
+        return {
+            "translated_text": translate_report_text(payload.text, payload.target_language_code),
+            "target_language_code": payload.target_language_code,
+            "provider": "sarvam",
+        }
+    except SarvamRateLimited:
+        raise HTTPException(status_code=429, detail="Sarvam is rate limiting translation requests. Please try again later.")
+    except SarvamProviderError:
+        raise HTTPException(status_code=502, detail="Sarvam translation is temporarily unavailable. Your original report is unchanged.")
+
+
 @app.get("/api/v1/capabilities")
 def capabilities():
     worker = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32
     return {
-        "apk_upload": True, "log_analysis": True, "risk_planner": True,
+        "apk_upload": True, "direct_apk_upload": STORAGE_ENABLED, "log_analysis": True, "risk_planner": True,
         "failure_fingerprinting": True, "bharat_score": True,
         "android_execution": False,
         "worker_dispatch": worker,
@@ -1127,11 +1307,12 @@ def capabilities():
             "unsupported": ["packet_loss", "cpu_constraint"],
             "scope": "Worker executes conditions on disposable Android Emulator targets only; active data-plane app traffic is unverified",
         },
-        "sarvam_translation": False,
+        "sarvam_translation": len(os.getenv("SARVAM_API_KEY", "").strip()) >= 16,
         "notes": [
             "Worker dispatch is configured only when BHARATSIM_WORKER_TOKEN is set; android_execution remains false here because this API cannot prove a live emulator has executed an APK. Check /api/v1/workers for recent worker heartbeats.",
             "The worker supports Android Emulator console latency and bandwidth controls plus reversible battery-saver and bounded storage-pressure simulation with readback/reset evidence. Full persona shaping remains false because packet loss, CPU throttling, RAM restriction, outage/recovery, and arbitrary-app traffic verification are not supported.",
-            "Sarvam translation is not wired into this application.",
+            "Sarvam translation is available only when SARVAM_API_KEY is configured; only the user-selected condensed report summary is sent.",
+            "When private Storage is configured, APK bytes use short-lived signed uploads directly to Supabase Storage, bypassing Vercel function request-body limits. The API verifies the stored object size before queueing.",
             "Worker result payloads are bounded and protected by lease tokens; inline artifact payloads are limited to 250 KB.",
         ],
     }
