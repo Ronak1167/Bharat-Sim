@@ -18,6 +18,13 @@ test.beforeEach(async ({ page }) => {
 
 
 test("public preview exposes the live planner but keeps private actions gated", async ({ page }) => {
+  let protectedRequestCount = 0;
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/v1/runs" || pathname === "/api/v1/workers" || pathname.startsWith("/api/v1/runs/")) {
+      protectedRequestCount += 1;
+    }
+  });
   await page.goto("/");
   await page.evaluate(() => sessionStorage.clear());
   await page.reload();
@@ -35,6 +42,8 @@ test("public preview exposes the live planner but keeps private actions gated", 
   await expect(page.getByRole("button", { name: "Analyze evidence" })).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
   await expect(page.getByText(/Log analysis and report export require a signed-in account/)).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(protectedRequestCount).toBe(0);
 });
 
 test("dashboard connects to the real API and renders authored profiles", async ({ page }) => {
