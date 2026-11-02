@@ -169,3 +169,23 @@ test("workspace sections never overlap at common desktop, tablet and phone width
     expect(layout.outside, `content outside viewport at ${width}px: ${JSON.stringify(layout)}`).toEqual([]);
   }
 });
+
+
+test("risk planner validates journeys and returns a real API-generated plan", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("API connected")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Risk-first test plan" })).toBeVisible();
+
+  const journeys = page.getByLabel("Critical user journeys");
+  const generate = page.getByRole("button", { name: "Generate plan" });
+  await journeys.fill("   \n  ");
+  await expect(generate).toBeDisabled();
+  await expect(page.getByText(/add at least one journey to continue/)).toBeVisible();
+
+  await journeys.fill("UPI transfer\nPayment retry");
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect(page.locator(".planner-active-config")).toContainText("2 critical journeys ranked");
+  await expect(page.locator(".planner-active-config")).toContainText("Deterministic heuristic");
+  await expect(page.getByText(/This ranks tests; it does not execute them or claim a failure/)).toBeVisible();
+});
