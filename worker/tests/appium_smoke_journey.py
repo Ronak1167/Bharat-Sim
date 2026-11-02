@@ -209,9 +209,19 @@ def wait_for_server() -> None:
     raise RuntimeError(f"Appium server did not become ready: {last_error}")
 
 
+def dismiss_system_dialogs() -> None:
+    try:
+        adb("shell", "am", "force-stop", "com.google.android.apps.nexuslauncher")
+        adb("shell", "input", "keyevent", "4")
+        adb("shell", "am", "start", "-n", "org.bharatsim.smokeapp/.MainActivity")
+    except Exception:
+        pass
+
+
 def find_element(session: str, using: str, value: str, timeout: int = 25) -> str:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
+    attempt = 0
     while time.monotonic() < deadline:
         try:
             result = request("POST", f"/session/{session}/element", {"using": using, "value": value})
@@ -221,6 +231,9 @@ def find_element(session: str, using: str, value: str, timeout: int = 25) -> str
             last_error = RuntimeError(f"Element response lacked W3C element id: {result}")
         except Exception as exc:
             last_error = exc
+        attempt += 1
+        if attempt % 3 == 0:
+            dismiss_system_dialogs()
         time.sleep(1)
     raise RuntimeError(f"Could not find element ({using}={value}) within {timeout}s: {last_error}")
 
@@ -318,6 +331,7 @@ def main() -> int:
         if not session_id:
             raise RuntimeError(f"Appium did not return a session id: {created}")
         base = f"/session/{session_id}"
+        dismiss_system_dialogs()
 
         action_id = find_element(session_id, "accessibility id", "primary-action")
         status_id = find_element(session_id, "accessibility id", "journey-status")
