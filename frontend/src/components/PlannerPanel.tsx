@@ -43,6 +43,7 @@ export default function PlannerPanel({ selected }: { selected: string }) {
     .slice(0, 10);
 
   function generatePlan() {
+    if (draftFlows.length === 0) return;
     setActiveConfig({
       appCategory: draftCategory,
       criticalFlows: draftFlows,
@@ -107,8 +108,8 @@ export default function PlannerPanel({ selected }: { selected: string }) {
           </label>
         </div>
         <div className="planner-config-footer">
-          <span>{draftFlows.length} / 10 journeys · category-specific risk keywords</span>
-          <button type="button" className="planner-generate" onClick={generatePlan} disabled={loading}>
+          <span>{draftFlows.length} / 10 journeys · category-specific risk keywords{draftFlows.length === 0 ? " · add at least one journey to continue" : ""}</span>
+          <button type="button" className="planner-generate" onClick={generatePlan} disabled={loading || draftFlows.length === 0}>
             <RefreshCw size={14} className={loading ? "spin" : ""} />
             Generate plan
           </button>
