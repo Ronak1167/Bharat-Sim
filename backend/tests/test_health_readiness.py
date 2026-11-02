@@ -92,13 +92,12 @@ def test_production_capabilities_require_database_storage_and_worker_for_upload(
     monkeypatch.setattr(main, "APP_ENV", "production")
     monkeypatch.setattr(main, "DATABASE_URL", "postgresql://user:pass@db.example.com:5432/postgres?sslmode=require")
     monkeypatch.setattr(main, "STORAGE_ENABLED", True)
-    monkeypatch.setattr(main, "production_worker_execution_enabled", lambda: True)
-    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "w" * 40)
+    monkeypatch.setattr(main, "worker_dispatch_configured", lambda: True)
 
     capabilities = main.capabilities()
 
-    assert capabilities["apk_upload"] is False
-    assert capabilities["direct_apk_upload"] is False
+    assert capabilities["apk_upload"] is True
+    assert capabilities["direct_apk_upload"] is True
 
 
 
