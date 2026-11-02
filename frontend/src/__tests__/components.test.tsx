@@ -325,6 +325,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="online"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
         />
       );
@@ -348,6 +349,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="online"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
         />
       );
@@ -355,6 +357,34 @@ describe("Components tests with jsdom", () => {
 
     const button = container.querySelector("button[type='submit']") as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+  });
+
+  it("UploadPanel blocks APK registration when production persistence is unavailable", async () => {
+    const mockFile = new File(["content"], "app.apk", { type: "application/vnd.android.package-archive" });
+    await act(async () => {
+      root.render(
+        <UploadPanel
+          apk={mockFile}
+          setApk={vi.fn()}
+          selected="budget-android"
+          setSelected={vi.fn()}
+          personas={fallbackPersonas}
+          workers={[]}
+          busy={false}
+          apiStatus="online"
+          directUploadAvailable={false}
+          uploadAvailable={false}
+          onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
+        />
+      );
+    });
+
+    const button = container.querySelector("button[type='submit']") as HTMLButtonElement;
+    const input = container.querySelector("input[type='file']") as HTMLInputElement;
+    expect(button.disabled).toBe(true);
+    expect(input.disabled).toBe(true);
+    expect(container.textContent).toContain("Run registration is unavailable until persistent PostgreSQL and private Supabase Storage are configured.");
+    expect(container.textContent).not.toContain("This deployment accepts APKs up to 4 MB only");
   });
 
   it("UploadPanel rejects non-apk files with inline error message", async () => {
@@ -371,6 +401,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="online"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
         />
       );
@@ -402,6 +433,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="online"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
         />
       );
@@ -433,6 +465,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="online"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn().mockImplementation((e) => e.preventDefault())}
         />
       );
@@ -511,6 +544,7 @@ describe("Components tests with jsdom", () => {
           busy={false}
           apiStatus="offline"
           directUploadAvailable={false}
+          uploadAvailable={true}
           onSubmit={vi.fn()}
         />
       );
@@ -581,6 +615,7 @@ describe("Components tests with jsdom", () => {
 
   it("CapabilityPanel renders only the backend-declared capability contract", async () => {
     const capabilities = {
+      database_persistence: true,
       apk_upload: true, direct_apk_upload: false, log_analysis: true, risk_planner: true,
       failure_fingerprinting: true, bharat_score: true, android_execution: false,
       worker_dispatch: true, network_shaping: false, sarvam_translation: false,
@@ -609,6 +644,36 @@ describe("Components tests with jsdom", () => {
     expect(container.textContent).toContain("Packet Loss · unsupported");
     expect(container.textContent).toContain("Ram Constraint · report-only");
     expect(container.textContent).toContain("Sarvam translation");
+  });
+
+  it("CapabilityPanel fails closed when an older API omits database persistence", async () => {
+    const legacyCapabilities = {
+      apk_upload: true, direct_apk_upload: true, log_analysis: true, risk_planner: true,
+      failure_fingerprinting: true, bharat_score: true, android_execution: false,
+      worker_dispatch: false, network_shaping: false, sarvam_translation: false,
+      emulator_network_controls: {
+        latency: true, bandwidth: true, configuration_readback: true,
+        packet_loss: false, outage_and_recovery: false,
+        arbitrary_app_traffic_verified: false, scope: "Emulator console controls."
+      },
+      persona_condition_simulation: {
+        supported: ["network_latency"], control_plane_verifiable: [],
+        report_only: [], unsupported: [], scope: "Worker required."
+      },
+      notes: []
+    };
+
+    await act(async () => {
+      root.render(<CapabilityPanel capabilities={legacyCapabilities} loading={false} />);
+    });
+
+    const rows = Array.from(container.querySelectorAll(".capability-row")).map(row => row.textContent ?? "");
+    expect(rows.find(row => row.includes("Persistent PostgreSQL"))).toContain("Not configured");
+    expect(rows.find(row => row.includes("APK upload and validation"))).toContain("Unavailable");
+    expect(rows.find(row => row.includes("Logcat signal analysis"))).toContain("Unavailable");
+    expect(rows.find(row => row.includes("Failure fingerprinting"))).toContain("Unavailable");
+    expect(rows.find(row => row.includes("BharatScore heuristic"))).toContain("Unavailable");
+    expect(rows.find(row => row.includes("Risk prioritization"))).toContain("Available");
   });
 
   it("CapabilityPanel does not infer availability when API capability data is missing", async () => {

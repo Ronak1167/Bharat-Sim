@@ -51,6 +51,23 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 STORAGE_API_KEY = SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 STORAGE_BUCKET = os.getenv("BHARATSIM_STORAGE_BUCKET", "bharatsim-private").strip()
 STORAGE_ENABLED = bool(SUPABASE_URL and STORAGE_API_KEY and STORAGE_BUCKET)
+
+
+def is_serverless_runtime() -> bool:
+    """Return true on platforms where local disk is ephemeral between invocations."""
+    return os.getenv("VERCEL") == "1" or bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
+
+def requires_persistent_database() -> bool:
+    """Production and serverless deployments must never use temporary SQLite state."""
+    return APP_ENV in {"production", "prod"} or is_serverless_runtime()
+
+
+def should_initialize_local_database() -> bool:
+    """Only local development may create and use the SQLite fallback."""
+    return not requires_persistent_database()
+
+
 AUTH_REQUIRED = os.getenv("BHARATSIM_AUTH_REQUIRED", "false").strip().lower() == "true"
 _jwks_client: PyJWKClient | None = None
 
@@ -477,6 +494,11 @@ class PostgresCompatConnection:
 
 @contextmanager
 def db():
+    if requires_persistent_database() and not DATABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Persistent PostgreSQL is not configured for this serverless deployment.",
+        )
     if DATABASE_URL:
         try:
             import psycopg
@@ -609,9 +631,9 @@ def init_db() -> None:
             if column not in columns:
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {column} {definition}")
 
-# Local SQLite is initialized for development/test only. Production schema is
-# managed exclusively by versioned Supabase migrations and checked by readiness.
-if APP_ENV not in {"production", "prod"}:
+# SQLite is a local-development convenience only. Vercel/AWS functions must
+# never create or use ephemeral /tmp database files, even in preview mode.
+if should_initialize_local_database():
     init_db()
 
 
@@ -703,7 +725,23 @@ def cleanup_expired_uploads() -> None:
                 conn.execute("UPDATE runs SET apk_path=NULL,apk_storage_path=NULL WHERE id=?", (row["id"],))
 
 
-cleanup_expired_uploads()
+def should_run_startup_cleanup() -> bool:
+    """Run filesystem/database cleanup only in local development processes.
+
+    Vercel functions are short-lived and may be imported before production
+    persistence is configured. Import-time cleanup can otherwise open the
+    ephemeral SQLite fallback and crash the entire ASGI function. Production
+    cleanup belongs in a separately scheduled job with explicit DB credentials.
+    """
+    return (
+        APP_ENV not in {"production", "prod"}
+        and os.getenv("VERCEL") != "1"
+        and not os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+    )
+
+
+if should_run_startup_cleanup():
+    cleanup_expired_uploads()
 
 
 def failure_fingerprint(line: str) -> str:
@@ -893,8 +931,8 @@ def health_ready():
         # Production must never report a temporary local SQLite file as its
         # persistence layer. Verify the configured Postgres schema as well as
         # basic connectivity before advertising readiness.
-        if production and not DATABASE_URL:
-            raise RuntimeError("Production PostgreSQL URL is not configured")
+        if requires_persistent_database() and not DATABASE_URL:
+            raise RuntimeError("Persistent PostgreSQL URL is not configured for this serverless deployment")
         validate_database_configuration(DATABASE_URL, APP_ENV)
         with db() as conn:
             conn.execute("SELECT 1").fetchone()
@@ -927,7 +965,7 @@ def health_ready():
     auth_configured = AUTH_REQUIRED and SUPABASE_URL.startswith("https://")
     storage_configured = STORAGE_ENABLED and SUPABASE_URL.startswith("https://")
     auth_required = production or AUTH_REQUIRED
-    storage_required = production
+    storage_required = requires_persistent_database()
     auth_ok = auth_configured if auth_required else True
     storage_ok = storage_configured if storage_required else True
     api_ready = database_ok and auth_ok and storage_ok
@@ -1203,6 +1241,11 @@ async def create_run(
 ):
     if not apk.filename:
         raise HTTPException(status_code=422, detail="An APK file is required to register a test run")
+    if requires_persistent_database() and not STORAGE_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Private Supabase Storage is required for APK uploads on serverless deployments.",
+        )
     cleanup_expired_uploads()
     if persona_id not in PERSONAS:
         raise HTTPException(status_code=422, detail="Unknown persona_id")
@@ -1315,7 +1358,9 @@ def require_worker_token(request: Request) -> None:
 
 
 def production_worker_execution_enabled() -> bool:
-    """Require explicit operator approval and isolation assertions before public APK execution."""
+    """Require an attested host before any serverless deployment can dispatch APKs."""
+    if is_serverless_runtime() and APP_ENV not in {"production", "prod"}:
+        return False
     if APP_ENV not in {"production", "prod"}:
         return True
     return all(
@@ -1799,10 +1844,16 @@ def translate_report(payload: SarvamTranslationRequest):
 
 @app.get("/api/v1/capabilities")
 def capabilities():
+    persistent_database_required = requires_persistent_database()
+    database_configured = bool(DATABASE_URL) if persistent_database_required else True
+    upload_available = database_configured and (STORAGE_ENABLED if persistent_database_required else True)
+    direct_upload_available = database_configured and STORAGE_ENABLED
     worker = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32 and production_worker_execution_enabled()
     return {
-        "apk_upload": True, "direct_apk_upload": STORAGE_ENABLED, "log_analysis": True, "risk_planner": True,
-        "failure_fingerprinting": True, "bharat_score": True,
+        "database_persistence": database_configured,
+        "apk_upload": upload_available, "direct_apk_upload": direct_upload_available,
+        "log_analysis": database_configured, "risk_planner": True,
+        "failure_fingerprinting": database_configured, "bharat_score": database_configured,
         "android_execution": False,
         "worker_dispatch": worker,
         "network_shaping": False,

@@ -74,22 +74,34 @@ export default function App() {
   async function refresh(silent = false) {
     if (!silent) setLoading(true);
     try {
-      const [p, r, w, capabilityContract] = await Promise.all([
+      const [p, capabilityContract] = await Promise.all([
         api<{ items: Persona[] }>("/api/v1/personas"),
-        api<{ items: Run[] }>("/api/v1/runs"),
-        api<{ items: Worker[] }>("/api/v1/workers"),
         api<Capabilities>("/api/v1/capabilities")
       ]);
       setPersonas(p.items);
-      setRuns(r.items);
-      setWorkers(w.items);
       setCapabilities(capabilityContract);
       setApiStatus("online");
       setError("");
+
+      // Operational history is database-backed, while personas and planning
+      // remain useful without a configured production database. Do not let a
+      // 503 from history/status endpoints make the entire dashboard look offline.
+      const [runResult, workerResult] = await Promise.allSettled([
+        api<{ items: Run[] }>("/api/v1/runs"),
+        api<{ items: Worker[] }>("/api/v1/workers")
+      ]);
+      setRuns(runResult.status === "fulfilled" ? runResult.value.items : []);
+      setWorkers(workerResult.status === "fulfilled" ? workerResult.value.items : []);
+      if (capabilityContract.database_persistence !== true) {
+        setNotice("Persistent PostgreSQL is not configured. Run history, APK registration, and saved log analysis are unavailable; risk planning remains available.");
+      } else if (runResult.status === "rejected" || workerResult.status === "rejected") {
+        setNotice("Some operational data is temporarily unavailable. Refresh to retry.");
+      }
     } catch (err) {
       setApiStatus("offline");
       setWorkers([]);
       setCapabilities(null);
+      setNotice("");
       setError(
         err instanceof Error && err.message
           ? err.message
@@ -124,6 +136,9 @@ export default function App() {
     setNotice("");
     setBusy(true);
     try {
+      if (capabilities?.database_persistence !== true || capabilities?.apk_upload !== true) {
+        throw new Error("Run registration is unavailable until production PostgreSQL and private APK storage are configured.");
+      }
       if (!apk) throw new Error("Choose an APK file first.");
       let run: Run & { message: string };
       if (capabilities?.direct_apk_upload) {
@@ -528,7 +543,8 @@ export default function App() {
                     workers={workers}
                     busy={busy}
                     apiStatus={apiStatus}
-                    directUploadAvailable={Boolean(capabilities?.direct_apk_upload)}
+                    directUploadAvailable={capabilities?.database_persistence === true && capabilities?.direct_apk_upload === true}
+                    uploadAvailable={capabilities?.database_persistence === true && capabilities?.apk_upload === true}
                     onSubmit={submitApk}
                   />
 
@@ -551,10 +567,16 @@ export default function App() {
                       placeholder="Paste Android logcat output here…"
                       rows={5}
                     />
+                    {apiStatus === "online" && (capabilities?.database_persistence !== true || capabilities?.log_analysis !== true) && (
+                      <div className="alert error-alert" role="status">
+                        <CircleAlert size={16} />
+                        <span>Saved log analysis requires persistent PostgreSQL. Risk planning remains available.</span>
+                      </div>
+                    )}
                     <div className="log-actions">
                       <button
                         className="primary-button"
-                        disabled={busy}
+                        disabled={busy || apiStatus !== "online" || capabilities?.database_persistence !== true || capabilities?.log_analysis !== true}
                         onClick={() => void analyzeLogs()}
                       >
                         {busy ? (
@@ -596,6 +618,14 @@ export default function App() {
                       <div className="alert error-alert" role="alert">
                         <CircleAlert size={16} />
                         <span>API is down or unreachable. Unable to load recent runs.</span>
+                      </div>
+                    ) : capabilities?.database_persistence !== true ? (
+                      <div className="empty-state">
+                        <div className="empty-icon">
+                          <Clock3 size={22} />
+                        </div>
+                        <b>Run history unavailable</b>
+                        <p>Persistent PostgreSQL is not configured for this deployment. No saved run history is being reported.</p>
                       </div>
                     ) : runs.length === 0 ? (
                       <div className="empty-state">
@@ -679,6 +709,14 @@ export default function App() {
                     <div className="alert error-alert" role="alert">
                       <CircleAlert size={18} />
                       <span>API is down or unreachable. Unable to load test runs.</span>
+                    </div>
+                  ) : capabilities?.database_persistence !== true ? (
+                    <div className="empty-state">
+                      <div className="empty-icon">
+                        <FlaskConical size={22} />
+                      </div>
+                      <b>Run history unavailable</b>
+                      <p>Persistent PostgreSQL is not configured for this deployment. No saved run history is being reported.</p>
                     </div>
                   ) : runs.length === 0 ? (
                     <div className="empty-state">
