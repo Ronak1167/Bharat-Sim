@@ -162,6 +162,7 @@ def test_supabase_auth_required_and_run_data_is_owner_scoped(monkeypatch, tmp_pa
     main.init_db()
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     monkeypatch.setattr(
         main, "verify_supabase_access_token",
         lambda token: {
@@ -278,6 +279,7 @@ def test_run_deletion_refuses_to_interrupt_an_active_worker(monkeypatch, tmp_pat
     main.init_db()
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     owner_id = "11111111-1111-4111-8111-111111111111"
     monkeypatch.setattr(main, "verify_supabase_access_token", lambda token: owner_id)
     now = main.utcnow()
@@ -311,6 +313,7 @@ def test_run_report_export_is_owner_scoped_and_integrity_tagged(monkeypatch, tmp
     main.init_db()
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     owners = {
         "user-a-token": "11111111-1111-4111-8111-111111111111",
         "user-b-token": "22222222-2222-4222-8222-222222222222",
@@ -379,12 +382,15 @@ def test_production_requires_worker_before_apk_upload(monkeypatch):
     monkeypatch.setattr(main, "DATABASE_URL", "postgresql://user:pass@db.example.com:5432/postgres?sslmode=require")
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setattr(main, "SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(main, "STORAGE_ENABLED", False)
+    monkeypatch.setattr(main, "STORAGE_ENABLED", True)
+    monkeypatch.setattr(main, "verify_supabase_access_token", lambda token: "test-user-id")
+    monkeypatch.delenv("BHARATSIM_WORKER_TOKEN", raising=False)
 
     response = client.post(
         "/api/v1/runs",
         headers={"Authorization": "Bearer valid-token"},
         data={"persona_id": "baseline"},
+        files={"apk": ("sample.apk", b"PK\x03\x04", "application/vnd.android.package-archive")},
     )
     assert response.status_code == 503
     assert "worker" in response.json()["detail"].lower()

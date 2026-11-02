@@ -1922,6 +1922,6 @@ def capabilities():
 # The Vercel customer-facing project builds the Vite dashboard and serves it
 # from this same FastAPI deployment. During backend-only unit tests the build
 # output is absent, so the API remains independently importable.
-_FRONTEND_BUILD = Path("frontend/dist")
+_FRONTEND_BUILD = _FRONTEND_DIST
 if _FRONTEND_BUILD.is_dir():
-    app.frontend("/", directory="frontend/dist", fallback="index.html")
+    app.frontend("/", directory=str(_FRONTEND_BUILD), fallback="index.html")

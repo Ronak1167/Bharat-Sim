@@ -192,6 +192,8 @@ def test_local_development_can_initialize_sqlite(monkeypatch):
 def test_serverless_multipart_apk_upload_requires_private_storage(monkeypatch):
     monkeypatch.setattr(main, "APP_ENV", "development")
     monkeypatch.setattr(main, "STORAGE_ENABLED", False)
+    monkeypatch.setattr(main, "production_worker_execution_enabled", lambda: True)
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     monkeypatch.setenv("VERCEL", "1")
     upload = main.UploadFile(filename="sample.apk", file=BytesIO(b"PK\\x03\\x04"))
 

@@ -58,6 +58,7 @@ def start_api(data_dir: Path, port: int, log_path: Path) -> subprocess.Popen:
     env = os.environ.copy()
     env["BHARATSIM_DATA_DIR"] = str(data_dir)
     env["BHARATSIM_REQUIRE_API_KEY"] = "false"
+    env["BHARATSIM_WORKER_TOKEN"] = "test-worker-token-00000000000000000000000000000000"
     env.pop("BHARATSIM_API_KEY", None)
     log = log_path.open("ab")
     proc = subprocess.Popen(
@@ -127,10 +128,10 @@ def test_run_metadata_survives_api_process_restart(tmp_path: Path) -> None:
         with urllib.request.urlopen(multipart_run_request(base_url), timeout=5) as response:
             created = json.loads(response.read().decode("utf-8"))
         run_id = created["id"]
-        assert created["status"] == "awaiting_worker"
+        assert created["status"] == "queued"
         assert created["apk"]["uploaded"] is True
         assert created["apk"]["sha256"]
-        assert "awaiting a worker" in created["message"]
+        assert "queued for an authenticated worker" in created["message"]
 
         stop_api(first)
         first = None  # type: ignore[assignment]
@@ -141,12 +142,12 @@ def test_run_metadata_survives_api_process_restart(tmp_path: Path) -> None:
             listed = get_json(base_url + "/api/v1/runs")
             persisted = next((item for item in listed["items"] if item["id"] == run_id), None)
             assert persisted is not None, "run metadata disappeared after API restart"
-            assert persisted["status"] == "awaiting_worker"
+            assert persisted["status"] == "queued"
             assert persisted["persona_id"] == "baseline"
             assert persisted["apk_sha256"] == created["apk"]["sha256"]
             detail = get_json(base_url + "/api/v1/runs/" + run_id)
             assert detail["id"] == run_id
-            assert detail["status"] == "awaiting_worker"
+            assert detail["status"] == "queued"
             assert detail["apk_sha256"] == created["apk"]["sha256"]
             assert detail.get("result") is None
         finally:

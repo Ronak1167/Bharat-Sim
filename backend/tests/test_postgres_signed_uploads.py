@@ -16,6 +16,7 @@ def test_postgres_signed_upload_persists_expected_apk_size(monkeypatch):
     monkeypatch.setattr(main, "AUTH_REQUIRED", False)
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
     monkeypatch.setattr(main, "STORAGE_ENABLED", True)
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     monkeypatch.setattr(
         main,
         "create_private_upload_url",
