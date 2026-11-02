@@ -395,4 +395,4 @@ def test_production_requires_private_storage_before_apk_upload(monkeypatch):
         data={"persona_id": "baseline"},
     )
     assert response.status_code == 503
-    assert "private supabase storage" in response.json()["detail"].lower()
+    assert "private apk storage" in response.json()["detail"].lower()
