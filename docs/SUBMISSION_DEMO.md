@@ -17,7 +17,7 @@ A planner result is a proposed test plan, not an executed test. A completed work
 
 ## Fast local setup
 
-Use a clean checkout of `main`. Requirements: Python 3.12, Node.js compatible with the pinned Vite toolchain, and npm.
+Use a clean checkout of `main`. Requirements: Python 3.12, Node.js 22.12 or newer (the CI build uses Node 22), and npm. Check versions first with `python --version` and `node --version`.
 
 ### Terminal 1 — API
 
@@ -26,8 +26,7 @@ cd backend
 python -m venv .venv
 # macOS/Linux:
 source .venv/bin/activate
-# Windows PowerShell:
-# .venv\\Scripts\\Activate.ps1
+Windows PowerShell: run `.venv\\Scripts\\Activate.ps1` instead of the macOS/Linux activation command.
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
@@ -52,6 +51,8 @@ Then run:
 ```bash
 npm run dev
 ```
+
+**Windows PowerShell note:** after `npm ci`, create `.env.local` with the same `VITE_API_BASE_URL` line, then run `npm run dev`. Keep the API terminal open while recording; closing it disconnects the dashboard from its backend.
 
 Open the local Vite URL printed by the command (normally `http://localhost:5173`). Do not set `VITE_SUPABASE_URL` or a publishable key for the local no-auth demo unless you intentionally want to test the sign-in flow. Never place a service-role key, Supabase secret key, database password, or worker token in a `VITE_*` variable.
 
