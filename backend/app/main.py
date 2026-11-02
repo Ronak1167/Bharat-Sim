@@ -1117,6 +1117,8 @@ def create_plan(request: PlanRequest):
 @app.post("/api/v1/uploads/sign")
 def sign_apk_upload(payload: SignedUploadRequest, request: Request):
     """Create a private, time-limited upload URL so APK bytes bypass Vercel's 4.5 MB function limit."""
+    if not worker_dispatch_configured():
+        raise HTTPException(status_code=503, detail="APK uploads are disabled because no verified execution worker is configured.")
     if not STORAGE_ENABLED:
         raise HTTPException(status_code=503, detail="Direct private APK uploads are not configured on this server.")
     if payload.persona_id not in PERSONAS:
@@ -1253,6 +1255,8 @@ async def create_run(
     persona_id: str = Form("budget-android"),
     apk: UploadFile = File(...),
 ):
+    if not worker_dispatch_configured():
+        raise HTTPException(status_code=503, detail="APK uploads are disabled because no verified execution worker is configured.")
     if not apk.filename:
         raise HTTPException(status_code=422, detail="An APK file is required to register a test run")
     if requires_persistent_database() and not STORAGE_ENABLED:
@@ -1385,6 +1389,11 @@ def production_worker_execution_enabled() -> bool:
             "BHARATSIM_WORKER_EGRESS_RESTRICTED",
         )
     )
+
+
+def worker_dispatch_configured() -> bool:
+    """A usable worker needs a credential and an open execution-safety gate."""
+    return len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32 and production_worker_execution_enabled()
 
 
 def require_production_worker_execution_approval() -> None:
@@ -1870,9 +1879,10 @@ def translate_report(payload: SarvamTranslationRequest):
 def capabilities():
     persistent_database_required = requires_persistent_database()
     database_configured = bool(DATABASE_URL) if persistent_database_required else True
-    upload_available = database_configured and (STORAGE_ENABLED if persistent_database_required else True)
-    direct_upload_available = database_configured and STORAGE_ENABLED
-    worker = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32 and production_worker_execution_enabled()
+    worker = worker_dispatch_configured()
+    # An APK upload is only useful when a verified worker can actually claim it.
+    upload_available = database_configured and worker and (STORAGE_ENABLED if persistent_database_required else True)
+    direct_upload_available = database_configured and STORAGE_ENABLED and worker
     return {
         "database_persistence": database_configured,
         "apk_upload": upload_available, "direct_apk_upload": direct_upload_available,
