@@ -79,6 +79,34 @@ def has_active_network(connectivity: str) -> bool:
     return bool(re.search(r"(?:WiFi|Cellular|Ethernet) active networks:\s*\{[^}]+\}", connectivity, re.I))
 
 
+def capture_screenshot(session_path: str, destination: Path) -> None:
+    screenshot_bytes = b""
+    for attempt in range(3):
+        try:
+            resp = request("GET", session_path + "/screenshot")
+            image_data = resp.get("value")
+            if isinstance(image_data, str) and image_data:
+                decoded = base64.b64decode(image_data, validate=True)
+                if len(decoded) > 100:
+                    screenshot_bytes = decoded
+                    break
+        except Exception:
+            if attempt < 2:
+                time.sleep(1.0)
+    if not screenshot_bytes:
+        screencap = subprocess.run(
+            ["adb", "-s", ADB_SERIAL, "exec-out", "screencap", "-p"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        if screencap.returncode == 0 and len(screencap.stdout) > 100 and screencap.stdout.startswith(b"\x89PNG"):
+            screenshot_bytes = screencap.stdout
+        else:
+            raise RuntimeError("Failed to capture screenshot via Appium or adb screencap")
+    destination.write_bytes(screenshot_bytes)
+
+
 def prepare_proxy_path() -> dict:
     """Keep a real Android network active and verify the host CONNECT proxy is ready."""
     adb("shell", "settings", "put", "global", "airplane_mode_on", "0")
@@ -181,9 +209,19 @@ def wait_for_server() -> None:
     raise RuntimeError(f"Appium server did not become ready: {last_error}")
 
 
+def dismiss_system_dialogs() -> None:
+    try:
+        adb("shell", "am", "force-stop", "com.google.android.apps.nexuslauncher")
+        adb("shell", "input", "keyevent", "4")
+        adb("shell", "am", "start", "-n", "org.bharatsim.smokeapp/.MainActivity")
+    except Exception:
+        pass
+
+
 def find_element(session: str, using: str, value: str, timeout: int = 25) -> str:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
+    attempt = 0
     while time.monotonic() < deadline:
         try:
             result = request("POST", f"/session/{session}/element", {"using": using, "value": value})
@@ -193,6 +231,9 @@ def find_element(session: str, using: str, value: str, timeout: int = 25) -> str
             last_error = RuntimeError(f"Element response lacked W3C element id: {result}")
         except Exception as exc:
             last_error = exc
+        attempt += 1
+        if attempt % 3 == 0:
+            dismiss_system_dialogs()
         time.sleep(1)
     raise RuntimeError(f"Could not find element ({using}={value}) within {timeout}s: {last_error}")
 
@@ -290,6 +331,7 @@ def main() -> int:
         if not session_id:
             raise RuntimeError(f"Appium did not return a session id: {created}")
         base = f"/session/{session_id}"
+        dismiss_system_dialogs()
 
         action_id = find_element(session_id, "accessibility id", "primary-action")
         status_id = find_element(session_id, "accessibility id", "journey-status")
@@ -401,12 +443,8 @@ def main() -> int:
         if reset_evidence.get("status") != "verified":
             raise RuntimeError(f"Could not verify CONNECT proxy reset: {reset_evidence}")
 
-        screenshot = request("GET", base + "/screenshot")
-        image_data = screenshot.get("value")
-        if not isinstance(image_data, str) or not image_data:
-            raise RuntimeError("Appium screenshot response was empty")
         screenshot_path = args.artifacts / "appium-primary-action.png"
-        screenshot_path.write_bytes(base64.b64decode(image_data, validate=True))
+        capture_screenshot(base, screenshot_path)
 
         logcat = subprocess.run(
             ["adb", "-s", ADB_SERIAL, "logcat", "-d", "-t", "2000", "-v", "threadtime"],
@@ -498,9 +536,7 @@ def main() -> int:
             except Exception as source_error:
                 (args.artifacts / "appium-page-source-error.txt").write_text(str(source_error))
             try:
-                image_data = request("GET", f"/session/{session_id}/screenshot").get("value")
-                if image_data:
-                    (args.artifacts / "appium-failure.png").write_bytes(base64.b64decode(image_data, validate=True))
+                capture_screenshot(f"/session/{session_id}", args.artifacts / "appium-failure.png")
             except Exception as screenshot_error:
                 (args.artifacts / "appium-screenshot-error.txt").write_text(str(screenshot_error))
         logcat_path = args.artifacts / "appium-failure-logcat.txt"

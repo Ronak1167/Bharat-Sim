@@ -82,6 +82,7 @@ def test_signed_upload_route_rejects_user_over_active_limit_before_signing(monke
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
     monkeypatch.setattr(main, "verify_supabase_access_token", lambda token: owner_id)
     monkeypatch.setattr(main, "STORAGE_ENABLED", True)
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     signed_calls = []
     monkeypatch.setattr(main, "create_private_upload_url", lambda path: signed_calls.append(path) or "https://example.supabase.co/storage/v1/object/upload/sign/bucket/" + path + "?token=" + "t" * 48)
 

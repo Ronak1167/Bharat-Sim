@@ -51,6 +51,7 @@ def test_signed_upload_is_only_queued_after_storage_verification(monkeypatch, tm
 
 
 def test_signed_upload_rejects_missing_storage_and_bad_metadata(monkeypatch, tmp_path):
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     monkeypatch.setattr(main, "STORAGE_ENABLED", False)
     client = TestClient(main.app)
     disabled = client.post(

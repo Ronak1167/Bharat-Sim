@@ -114,4 +114,32 @@ describe("Supabase browser authentication", () => {
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer access-token");
     expect(auth.readSession()).toBeNull();
   });
+
+  it("supports legacy VITE_SUPABASE_ANON_KEY when publishable key is omitted", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "legacy_anon_key_test");
+    vi.resetModules();
+    const auth = await import("../auth");
+
+    expect(auth.authConfigured).toBe(true);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => sessionPayload(),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await auth.signIn("test@example.com", "secret");
+    expect(fetchMock.mock.calls[0][1].headers.apikey).toBe("legacy_anon_key_test");
+  });
+
+  it("reports authConfigured as false when credentials are not configured", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "");
+    vi.resetModules();
+    const auth = await import("../auth");
+
+    expect(auth.authConfigured).toBe(false);
+  });
 });
