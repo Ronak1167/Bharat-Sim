@@ -813,7 +813,7 @@ export default function App() {
                       </div>
                       <b>No analysis report yet</b>
                       <p>
-                        Paste logs in Overview or run the sample analysis to see evidence-linked findings.
+                        Paste Android logcat in Overview to create a report with source-line evidence.
                       </p>
                       <button
                         className="primary-button"
