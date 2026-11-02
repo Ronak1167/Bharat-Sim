@@ -1,5 +1,21 @@
 # Production release gates
 
+## Live follow-up — 2026-11-02, post-cutover smoke verification
+
+This is the latest live check and supersedes the earlier pre-deployment observations below.
+
+- GitHub application-code fix `9ec3ae1edefb1a604f46ecc3fab06088c6c4cc0c` (PR #124) declares the FastAPI runtime dependencies at the repository root, including `PyJWT[crypto]`. The unified Vercel build from commit `412edb8c092d87bcbfa47abc6118a4a1b2bab263` is **READY** and aliases `https://bharat-sim-81g2.vercel.app`. Build logs show Python 3.12, installation from root `pyproject.toml`, `python build_frontend.py`, 38 frontend tests passing, Vite production assets generated, and deployment completed.
+- Live HTTP checks on the stable production domain: `/` 200 (Supabase sign-in screen), `/health/live` 200, `/api/v1/capabilities` 200, `/api/v1/personas` 200, `/runs` 200, `/analyses` 200, and `/docs` 200. SPA deep links return the app shell.
+- `/health/ready` returns HTTP 503 with `database=unavailable`, `private_storage=unavailable`, `authentication=configured`, and `worker_execution_enabled=false`. `/api/v1/runs` and `/api/v1/workers` return HTTP 503 with `Production persistence is not configured`. This is the intended fail-closed behavior, not a passing persistence test.
+- The capability endpoint reports `log_analysis=true`, `risk_planner=true`, `failure_fingerprinting=true`, and `bharat_score=true`; it reports APK upload, persistent history, Android execution and worker dispatch disabled. Sarvam translation is also disabled because no server-side `SARVAM_API_KEY` is configured.
+- The production app requires Supabase Auth. A successful user sign-in and authenticated report analysis have not been independently tested in this smoke pass. Local recording remains available without production credentials using `docs/SUBMISSION_DEMO.md`.
+- Production Vercel still lacks `BHARATSIM_DATABASE_URL` and `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`). No per-job isolated Android worker host is provisioned. Keep all public APK execution/isolation flags false.
+- Main contains documentation-only commits after the READY app deployment; their Vercel Git deployments were observed queued. The hourly release monitor must continue checking the latest main SHA and verify any later deployment before treating it as current.
+
+**Decision:** the corrected unified application is live and its core public routes are healthy. Production persistence, authenticated end-to-end use, private APK upload, Sarvam live translation and public APK execution remain blocked/unverified. This is a controlled-beta deployment, not production acceptance.
+
+---
+
 ## Live follow-up — 2026-11-02, submission cutover inspection
 
 This is the newest operational snapshot; older entries below are historical and must not override it.
