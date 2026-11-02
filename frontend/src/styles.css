@@ -633,3 +633,125 @@ footer{border-color:#ded6c6;color:#7b887b}
 .analysis-progress-track i{display:block;width:38%;height:100%;background:var(--green);border-radius:3px;animation:analysis-progress-sweep 1.15s ease-in-out infinite}
 @keyframes analysis-progress-sweep{0%{transform:translateX(-110%)}100%{transform:translateX(370%)}}
 @media(prefers-reduced-motion:reduce){.analysis-progress-track i{animation:none;width:100%;opacity:.65}.analysis-progress-icon.spin{animation:none}}
+
+
+/* Responsive integrity layer: keep real workspace content readable at every width. */
+.app-shell,.main,.content,.panel,.full-panel,.run-detail-panel,.run-evidence-body,
+.dashboard-grid,.metric-grid,.capability-panel,.evidence-fusion-panel,
+.evidence-fusion-heading,.evidence-fusion-sources,.evidence-observation-grid,
+.comparison-grid,.run-evidence-body > *, .panel-heading > div {
+  min-width: 0;
+}
+.content { width: 100%; }
+.main { min-width: 0; }
+.topbar { min-width: 0; gap: 12px; }
+.breadcrumbs { min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
+.top-actions { min-width: 0; flex: 0 0 auto; }
+.workspace-status-card { width: 100%; max-width: 430px; min-width: 0; }
+.workspace-status-foot span,
+.capability-note,
+.condition-chip,
+.evidence-source p,
+.evidence-observation p,
+.evidence-hypothesis p,
+.finding-card p,
+.recommendation,
+.limitations,
+.no-evidence { overflow-wrap: anywhere; }
+.panel-heading { min-width: 0; flex-wrap: wrap; }
+.panel-heading > div { flex: 1 1 220px; }
+.panel-heading h2,.panel-heading p { overflow-wrap: anywhere; }
+.persona-row { min-width: 0; }
+.persona-info { min-width: 0; overflow-wrap: anywhere; }
+.persona-tags { min-width: 0; }
+.detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.detail-grid > span { min-width: 0; overflow-wrap: anywhere; }
+.detail-top-nav,.detail-actions,.run-header-meta,.condition-summary-bar,
+.marker-chips,.finding-top,.finding-title,.planner-heading-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.detail-actions { justify-content: flex-end; }
+.comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.comparison-card { min-width: 0; }
+.table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.table-wrap table { min-width: 680px; }
+.report-json,.step-output-box,.evidence-observation-marker code,
+.report-json code { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+.runs-toolbar { min-width: 0; }
+.runs-search,.runs-filter { min-width: 0; }
+.runs-search input,.runs-filter select { min-width: 0; max-width: 100%; }
+.auth-screen { min-height: 100svh; padding: 24px 16px; }
+.auth-card { width: min(100%, 460px); min-width: 0; }
+.auth-card input,.auth-submit { width: 100%; min-width: 0; }
+button,a,input,select,textarea { max-width: 100%; }
+svg { flex-shrink: 0; }
+
+@media (max-width: 1150px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+  .comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  .topbar { height: auto; min-height: 58px; padding-block: 10px; align-items: center; }
+  .topbar .breadcrumbs { flex: 1 1 180px; }
+  .top-actions { flex: 0 0 auto; }
+  .detail-top-nav { align-items: flex-start; gap: 10px; }
+  .detail-actions { justify-content: flex-start; }
+  .evidence-fusion-sources,.evidence-observation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .sidebar { position: relative; width: 100%; height: auto; min-width: 0; }
+  .sidebar nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .nav-item { min-width: 0; justify-content: center; white-space: normal; text-align: center; overflow-wrap: anywhere; }
+  .nav-item svg { width: 15px; height: 15px; }
+  .topbar { position: sticky; top: 0; display: flex; flex-wrap: wrap; gap: 8px 12px; }
+  .topbar .breadcrumbs { flex: 1 1 150px; }
+  .top-actions { flex: 0 0 auto; margin-left: auto; }
+  .content { padding-inline: clamp(12px, 4vw, 18px); }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .hero > div:first-child { min-width: 0; }
+  .hero-visual { width: 100%; max-width: none; height: auto; min-height: 0; margin: 0; }
+  .workspace-status-card { max-width: none; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+  .panel { padding: clamp(13px, 3.5vw, 18px); }
+  .persona-row { align-items: flex-start; }
+  .persona-info { flex: 1 1 130px; }
+  .risk-badge { flex: 0 0 auto; }
+  .comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .score-summary { min-width: 0; }
+  .score-copy { min-width: 0; flex: 1 1 180px; }
+  .finding-totals { min-width: 0; }
+  .detail-top-nav { flex-direction: column; }
+  .detail-actions { width: 100%; }
+  .detail-actions > * { flex: 0 1 auto; }
+  .evidence-fusion-heading { align-items: flex-start; flex-wrap: wrap; }
+  .evidence-fusion-status { max-width: 100%; white-space: normal; }
+}
+@media (max-width: 520px) {
+  .topbar .breadcrumbs { flex-basis: 100%; }
+  .top-actions { width: 100%; justify-content: flex-end; }
+  .metric-grid { gap: 8px; }
+  .metric-card { min-width: 0; padding: 12px; }
+  .metric-heading { white-space: normal; overflow-wrap: anywhere; }
+  .metric-value { overflow-wrap: anywhere; }
+  .workspace-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-heading { align-items: flex-start; }
+  .panel-heading > div { flex-basis: 100%; }
+  .panel-heading > button,.panel-heading > a { max-width: 100%; }
+  .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runs-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .runs-count { grid-column: auto; }
+  .evidence-fusion-sources,.evidence-observation-grid { grid-template-columns: minmax(0, 1fr); }
+  .sarvam-controls { align-items: stretch; flex-direction: column; }
+  .sarvam-controls select,.sarvam-controls button { width: 100%; }
+  .auth-card { padding: 24px 20px; }
+}
+@media (max-width: 360px) {
+  .sidebar nav { grid-template-columns: minmax(0, 1fr); }
+  .nav-item { justify-content: flex-start; padding-inline: 12px; }
+  .metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .workspace-status-grid { grid-template-columns: minmax(0, 1fr); }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .detail-actions > * { flex: 1 1 100%; }
+}
