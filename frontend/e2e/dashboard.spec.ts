@@ -120,3 +120,52 @@ test("workspace deep links render after direct browser navigation", async ({ pag
   await expect(page).toHaveURL(/analysis$/);
   await expect(page.getByRole("heading", { name: "Log analysis results" })).toBeVisible();
 });
+
+
+test("workspace sections never overlap at common desktop, tablet and phone widths", async ({ page }) => {
+  const widths = [320, 375, 520, 720, 768, 1024, 1280, 1440];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect(page.getByText("API connected")).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const selectors = [".topbar > *", ".sidebar nav > *", ".metric-grid > *", ".dashboard-grid > *"];
+      const overlaps: string[] = [];
+      const outside: string[] = [];
+      for (const selector of selectors) {
+        const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector))
+          .filter((node) => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return style.display !== "none" && rect.width > 0 && rect.height > 0;
+          });
+        const rects = nodes.map((node) => ({ node, rect: node.getBoundingClientRect() }));
+        for (let i = 0; i < rects.length; i++) {
+          const { node, rect } = rects[i];
+          if (rect.left < -1 || rect.right > document.documentElement.clientWidth + 1) {
+            outside.push(selector + ": " + (node.className?.toString() || node.tagName));
+          }
+          for (let j = i + 1; j < rects.length; j++) {
+            const other = rects[j].rect;
+            const overlapX = Math.min(rect.right, other.right) - Math.max(rect.left, other.left);
+            const overlapY = Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top);
+            if (overlapX > 1 && overlapY > 1) {
+              overlaps.push(selector + ": sibling elements intersect");
+            }
+          }
+        }
+      }
+      return {
+        viewport: document.documentElement.clientWidth,
+        document: document.documentElement.scrollWidth,
+        overlaps,
+        outside,
+      };
+    });
+
+    expect(layout.document, `horizontal overflow at ${width}px: ${JSON.stringify(layout)}`).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.overlaps, `overlapping layout at ${width}px: ${JSON.stringify(layout)}`).toEqual([]);
+    expect(layout.outside, `content outside viewport at ${width}px: ${JSON.stringify(layout)}`).toEqual([]);
+  }
+});
