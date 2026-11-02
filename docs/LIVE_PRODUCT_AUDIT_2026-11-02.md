@@ -97,13 +97,13 @@ Do not provision paid infrastructure or change unrelated Render/GenomeGuard serv
 
 ---
 
-## Follow-up verification — 2026-11-02, 19:45 IST
+## Follow-up verification — 2026-11-02 (evening)
 
 This follow-up supersedes the earlier repository SHA and frontend-preview status above where they differ. It records read-only checks; no shared Supabase objects or production credentials were changed.
 
 ### Current repository and checks
 
-- Current `main`: `3cc6741ba883a0a9df6fa334d23aaf452ec6ca6b`.
+- Tested functional code revision: `3cc6741ba883a0a9df6fa334d23aaf452ec6ca6b`. Subsequent commits in this follow-up are documentation-only.
 - CI [41455573701](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41455573701): all seven jobs passed, including backend, frontend build, real-API Playwright E2E, PostgreSQL integration, worker guards, unified Vercel build, and Docker/Compose smoke.
 - Dependency security audit [41455573673](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41455573673): passed.
 - The public guest preview is now tested not to call protected `/api/v1/runs`, `/api/v1/workers`, or per-run endpoints. It only uses public personas, capability and planning routes. Private log submission, APK registration, reports and run history remain locked.
