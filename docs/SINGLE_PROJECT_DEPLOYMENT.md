@@ -33,3 +33,13 @@ This consolidates the HTTP application, not the stateful infrastructure:
 ## Rollback
 
 If the unified deployment fails, restore the frontend project's prior root directory `frontend` and prior Vite framework setting. The previous backend project and its deployment remain available as a rollback target until cutover is accepted.
+
+## Current cutover state — 2 November 2026
+
+- PR #120 is merged as `fb1504d9e8954a2f3b5d467a2ace81ad03417a5c`.
+- The existing frontend Vercel project has been changed to repository-root / FastAPI / Python 3.12 / `python build_frontend.py`.
+- The same project's Production and Preview environments now require Supabase JWT authentication and use production fail-closed mode. The three public APK execution/isolation flags are explicitly false.
+- Unified build smoke tests, backend, frontend, Playwright, PostgreSQL integration and container/Compose CI passed; dependency audit passed.
+- Vercel rejected the production deployment because the team exceeded the free-plan API deployment limit (more than 100 deployments; retry-after 24 hours). The current public URL is still serving its previous ready deployment until the new unified build is published.
+- The old backend project remains online as a rollback target. Do not delete it before the new deployment passes live endpoint, auth, database, upload and browser acceptance checks.
+- The frontend project still lacks `BHARATSIM_DATABASE_URL` and a server-only `SUPABASE_SECRET_KEY`. The database-backed and private-storage features cannot pass readiness until these are supplied.
