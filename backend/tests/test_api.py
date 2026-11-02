@@ -153,6 +153,13 @@ def test_readiness_reports_worker_not_configured(monkeypatch):
 def test_supabase_auth_required_and_run_data_is_owner_scoped(monkeypatch, tmp_path):
     from app import main
 
+    monkeypatch.setattr(main, "APP_ENV", "development")
+    monkeypatch.setattr(main, "DATABASE_URL", "")
+    monkeypatch.setattr(main, "STORAGE_ENABLED", False)
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    monkeypatch.delenv("BHARATSIM_WORKER_TOKEN", raising=False)
+
     data_dir = tmp_path / "auth-data"
     data_dir.mkdir()
     monkeypatch.setattr(main, "DB_PATH", data_dir / "auth.sqlite3")
@@ -185,6 +192,7 @@ def test_supabase_auth_required_and_run_data_is_owner_scoped(monkeypatch, tmp_pa
         files={"apk": ("owner-test.apk", apk.getvalue(), "application/vnd.android.package-archive")},
     )
     assert created.status_code == 200
+    assert created.json()["status"] == "awaiting_worker"
     run_id = created.json()["id"]
 
     assert [item["id"] for item in client.get("/api/v1/runs", headers=user_a).json()["items"]] == [run_id]
@@ -372,7 +380,7 @@ def test_production_missing_database_keeps_liveness_and_fails_closed(monkeypatch
     assert not (tmp_path / "must-not-create.sqlite3").exists()
 
 
-def test_production_requires_worker_before_apk_upload(monkeypatch):
+def test_production_requires_private_storage_before_apk_upload(monkeypatch):
     from app import main
 
     monkeypatch.setattr(main, "APP_ENV", "production")
@@ -387,4 +395,4 @@ def test_production_requires_worker_before_apk_upload(monkeypatch):
         data={"persona_id": "baseline"},
     )
     assert response.status_code == 503
-    assert "worker" in response.json()["detail"].lower()
+    assert "private supabase storage" in response.json()["detail"].lower()
