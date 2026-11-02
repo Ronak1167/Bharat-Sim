@@ -16,6 +16,25 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
+
+test("public preview exposes the live planner but keeps private actions gated", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+
+  await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
+  await page.getByRole("button", { name: /Explore public planner preview/ }).click();
+
+  await expect(page.getByText(/Public preview · live persona and risk planner/)).toBeVisible();
+  await expect(page.getByText("API connected")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bharat personas" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Risk-first test plan" })).toBeVisible();
+  await expect(page.getByPlaceholder("Paste Android logcat output here…")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Analyze evidence" })).toBeDisabled();
+  await expect(page.locator('input[type="file"]')).toBeDisabled();
+  await expect(page.getByText(/Log analysis and report export require a signed-in account/)).toBeVisible();
+});
+
 test("dashboard connects to the real API and renders authored profiles", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("API connected")).toBeVisible();
@@ -176,11 +195,16 @@ test("risk planner validates journeys and returns a real API-generated plan", as
   await expect(page.getByText("API connected")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Risk-first test plan" })).toBeVisible();
 
+  await page.getByLabel("Application category").selectOption("fintech");
   const journeys = page.getByLabel("Critical user journeys");
   const generate = page.getByRole("button", { name: "Generate plan" });
   await journeys.fill("   \n  ");
   await expect(generate).toBeDisabled();
   await expect(page.getByText(/add at least one journey to continue/)).toBeVisible();
+
+  await journeys.fill(Array.from({ length: 11 }, (_, index) => "Journey " + (index + 1)).join("\n"));
+  await expect(generate).toBeDisabled();
+  await expect(page.getByText(/remove extra journeys to continue/)).toBeVisible();
 
   await journeys.fill("UPI transfer\nPayment retry");
   await expect(generate).toBeEnabled();
@@ -188,4 +212,9 @@ test("risk planner validates journeys and returns a real API-generated plan", as
   await expect(page.locator(".planner-active-config")).toContainText("2 critical journeys ranked");
   await expect(page.locator(".planner-active-config")).toContainText("Deterministic heuristic");
   await expect(page.getByText(/This ranks tests; it does not execute them or claim a failure/)).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export plan JSON/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^bharatsim-risk-plan-fintech\.json$/);
 });
