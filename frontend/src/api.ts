@@ -381,6 +381,10 @@ export function isRunActive(status: string): boolean {
   );
 }
 
+export function isRunExecuting(status: string): boolean {
+  return status === "leased" || status === "running";
+}
+
 export function cls(v: string): string {
   return v === "critical" ? "critical" : v === "high" ? "high" : v === "medium" ? "medium" : "low";
 }

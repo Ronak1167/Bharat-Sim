@@ -11,7 +11,7 @@ import EvidenceSynthesisPanel from "../components/EvidenceSynthesisPanel";
 import PlannerPanel from "../components/PlannerPanel";
 import RunDetailView from "../components/RunDetailView";
 import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
-import { cls, displayRunStatus, fallbackPersonas, isRunActive } from "../api";
+import { cls, displayRunStatus, fallbackPersonas, isRunActive, isRunExecuting } from "../api";
 
 describe("api helper utilities", () => {
   it("formats risk classes correctly", () => {
@@ -38,6 +38,15 @@ describe("api helper utilities", () => {
     expect(isRunActive("completed")).toBe(false);
     expect(isRunActive("failed")).toBe(false);
     expect(isRunActive("timed_out")).toBe(false);
+  });
+
+  it("identifies executing runs vs queued/awaiting runs for deletion safety", () => {
+    expect(isRunExecuting("leased")).toBe(true);
+    expect(isRunExecuting("running")).toBe(true);
+    expect(isRunExecuting("awaiting_worker")).toBe(false);
+    expect(isRunExecuting("queued")).toBe(false);
+    expect(isRunExecuting("completed")).toBe(false);
+    expect(isRunExecuting("failed")).toBe(false);
   });
 });
 
@@ -310,6 +319,44 @@ describe("Components tests with jsdom", () => {
     expect(container.textContent).toContain("Evidence timeline");
     expect(container.textContent).toContain("worker claimed");
     expect(container.textContent).toContain("attempt: 1");
+    // Queued run delete button should be enabled so user can cancel/delete queued run
+    const deleteBtn = container.querySelector(".danger-button") as HTMLButtonElement | null;
+    expect(deleteBtn).not.toBeNull();
+    expect(deleteBtn?.disabled).toBe(false);
+  });
+
+  it("RunDetailView disables delete button while worker execution is active", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return { ok: true, json: async () => ({ items: [] }) };
+      }
+      return { ok: true, json: async () => ({
+        id: "run-leased-456",
+        created_at: "2026-11-01T09:55:00Z",
+        status: "leased",
+        apk_name: "sample.apk",
+        apk_sha256: "b".repeat(64),
+        persona_id: "budget-android",
+        result: null,
+        error: null
+      }) };
+    }));
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/runs/run-leased-456"]}>
+          <Routes>
+            <Route path="/runs/:id" element={<RunDetailView personas={fallbackPersonas} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const deleteBtn = container.querySelector(".danger-button") as HTMLButtonElement | null;
+    expect(deleteBtn).not.toBeNull();
+    expect(deleteBtn?.disabled).toBe(true);
   });
 
   it("UploadPanel disables submit button when apk is null", async () => {

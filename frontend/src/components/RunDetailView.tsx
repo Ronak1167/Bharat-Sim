@@ -22,6 +22,7 @@ import {
   displayRunStatus,
   date,
   isRunActive,
+  isRunExecuting,
   type RunDetail,
   type Persona,
   type WorkerReport,
@@ -107,7 +108,7 @@ export default function RunDetailView({ personas }: RunDetailViewProps) {
   };
 
   const handleDelete = async () => {
-    if (!id || !run || isRunActive(run.status) || deleting) return;
+    if (!id || !run || isRunExecuting(run.status) || deleting) return;
     const confirmed = window.confirm(
       "Permanently delete this test run and its associated analysis evidence? This cannot be undone."
     );
@@ -258,8 +259,8 @@ export default function RunDetailView({ personas }: RunDetailViewProps) {
           <button
             className="danger-button"
             onClick={() => void handleDelete()}
-            disabled={isRunActive(run.status) || deleting}
-            title={isRunActive(run.status) ? "Wait until worker execution finishes before deleting" : "Permanently delete this run and its evidence"}
+            disabled={isRunExecuting(run.status) || deleting}
+            title={isRunExecuting(run.status) ? "Wait until worker execution finishes before deleting" : "Permanently delete this run and its evidence"}
           >
             {deleting ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />}
             {deleting ? "Deleting…" : "Delete run"}
