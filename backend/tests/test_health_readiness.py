@@ -103,7 +103,7 @@ def test_production_capabilities_require_database_and_storage_for_upload(monkeyp
 
 
 
-def test_local_capabilities_hide_apk_upload_without_storage(monkeypatch):
+def test_local_capabilities_allow_local_intake_without_worker(monkeypatch):
     monkeypatch.setattr(main, "APP_ENV", "development")
     monkeypatch.setattr(main, "DATABASE_URL", "")
     monkeypatch.setattr(main, "STORAGE_ENABLED", False)
@@ -112,7 +112,7 @@ def test_local_capabilities_hide_apk_upload_without_storage(monkeypatch):
 
     capabilities = main.capabilities()
 
-    assert capabilities["apk_upload"] is False
+    assert capabilities["apk_upload"] is True
     assert capabilities["direct_apk_upload"] is False
     assert capabilities["worker_dispatch"] is False
 
