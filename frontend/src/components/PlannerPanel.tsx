@@ -90,7 +90,7 @@ export default function PlannerPanel({ selected }: { selected: string }) {
   }
 
   return (
-    <section className="panel planner-panel">
+    <section className="panel planner-panel" id="risk-planner">
       <div className="panel-heading">
         <div>
           <div className="section-kicker">02B / INTERACTION HUNTER</div>
