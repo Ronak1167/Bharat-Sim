@@ -102,10 +102,12 @@ export default function App() {
       ]);
       setRuns(runResult.status === "fulfilled" ? runResult.value.items : []);
       setWorkers(workerResult.status === "fulfilled" ? workerResult.value.items : []);
-      if (capabilityContract.database_persistence !== true) {
+      if (!previewMode && capabilityContract.database_persistence !== true) {
         setNotice("Persistent PostgreSQL is not configured. Risk planning and pasted-log analysis work, but run history, APK registration, and saved reports are unavailable.");
-      } else if (runResult.status === "rejected" || workerResult.status === "rejected") {
+      } else if (!previewMode && (runResult.status === "rejected" || workerResult.status === "rejected")) {
         setNotice("Some operational data is temporarily unavailable. Refresh to retry.");
+      } else if (previewMode) {
+        setNotice("");
       }
     } catch (err) {
       setApiStatus("offline");
@@ -430,13 +432,13 @@ export default function App() {
                     window.setTimeout(
                       () =>
                         document
-                          .getElementById("new-run")
+                          .getElementById(previewMode ? "risk-planner" : "new-run")
                           ?.scrollIntoView({ behavior: "smooth", block: "center" }),
                       50
                     );
                   }}
                 >
-                  <FlaskConical size={16} /> Configure a test <ArrowUpRight size={15} />
+                  <FlaskConical size={16} /> {previewMode ? "Explore risk planner" : "Configure a test"} <ArrowUpRight size={15} />
                 </button>
               </div>
             </div>
