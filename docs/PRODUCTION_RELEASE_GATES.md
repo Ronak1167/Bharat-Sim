@@ -1,5 +1,22 @@
 # Production release gates
 
+## Live follow-up — 2026-11-02, submission cutover inspection
+
+This is the newest operational snapshot; older entries below are historical and must not override it.
+
+- GitHub `main` includes the current application-code fix at `9ec3ae1edefb1a604f46ecc3fab06088c6c4cc0c` (PR #124), which declares FastAPI, Uvicorn, Pydantic, python-multipart, psycopg and `PyJWT[crypto]` in the root `pyproject.toml` used by the unified Vercel FastAPI runtime. Subsequent commits `412edb8` and `e4ae511` add the local submission demo runbook and refresh the README; they do not change application runtime code.
+- Canonical customer-facing project: `bharat-sim-81g2`, repository root, FastAPI framework, Python 3.12, `python build_frontend.py`, one origin. Latest inspected Production deployment is READY but still runs older application commit `fba8d68b043396c28c615a761b14e104a3913047`, not the dependency fix. The latest main combined status still reports Vercel `build-rate-limit`; no repeated deployment attempts or quota bypasses should be made.
+- The project is Git-connected to `kaustubhdua/Bharat-Sim` on `main`. Git integration will attempt a deployment for new main commits; the existing hourly `Finish BharatSim deployment` monitor independently resolves the current main SHA and retries the controlled release only after the provider accepts deployments. Do not pin a stale SHA. A READY deployment is not acceptance until its deployed SHA and runtime endpoints are checked.
+- The prior production runtime failure was confirmed as `ModuleNotFoundError: No module named 'jwt'`. PR #124 fixes the root dependency manifest. The correction still requires a successful Vercel build and live import/route smoke tests; do not describe the issue as fixed in production until then.
+- The public domain is `https://bharat-sim-81g2.vercel.app`. The latest inspection did not establish a passing live end-to-end customer journey. Recheck `/`, `/health/live`, `/health/ready`, `/api/v1/capabilities`, `/api/v1/personas`, and SPA deep links after the corrected deployment is published.
+- Production Vercel environment inventory does not contain `BHARATSIM_DATABASE_URL`, `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`. Supabase `common 1` has the private `bharatsim` schema/tables and private `bharatsim-private` bucket, but production DB and Storage round trips are not proven. Never substitute the browser publishable key or expose server credentials.
+- Keep `BHARATSIM_PUBLIC_APK_EXECUTION_ENABLED=false`, `BHARATSIM_WORKER_ISOLATION_ATTESTED=false`, and `BHARATSIM_WORKER_EGRESS_RESTRICTED=false`. No per-job Firecracker worker host is provisioned. Do not execute untrusted uploads on Vercel, a developer laptop or a personal phone.
+- `docs/SUBMISSION_DEMO.md` now provides a local recording workflow, optional disposable-emulator smoke instructions, a five-minute demo sequence, safe claim language and submission checklist. Local recording does not depend on Vercel or production credentials.
+
+**Operational decision:** the repository/local controlled-beta prototype can be demonstrated, but the public Vercel release and production APK execution are not accepted. Keep the old API-only project as rollback until the unified project passes live acceptance. Production DB/Storage credentials and isolated worker infrastructure remain explicit external gates.
+
+---
+
 ## Live follow-up — 2026-11-02, 04:07 UTC
 
 This supersedes older deployment-state observations below where they conflict with the live checks in this section.
