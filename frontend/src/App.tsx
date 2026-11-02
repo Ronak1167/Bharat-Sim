@@ -309,7 +309,7 @@ export default function App() {
             onClick={() => navigate("/runs")}
           >
             <FlaskConical size={17} /> Test runs{" "}
-            <span className="nav-count">{runs.length}</span>
+            <span className="nav-count">{previewMode ? "LOCKED" : runs.length}</span>
           </button>
           <button
             className={"nav-item " + (currentTab === "analysis" ? "active" : "")}
@@ -330,21 +330,25 @@ export default function App() {
             <div>
               <b>Execution worker</b>
               <small>
-                {workers.some((w) => w.online)
-                  ? workers.filter((w) => w.online).length +
-                    " heartbeat(s) · " +
-                    (workers.some((w) => w.status === "running") ? "running" : "idle")
-                  : "No recent heartbeat"}
+                {previewMode
+                  ? "Private operational status"
+                  : workers.some((w) => w.online)
+                    ? workers.filter((w) => w.online).length +
+                      " heartbeat(s) · " +
+                      (workers.some((w) => w.status === "running") ? "running" : "idle")
+                    : "No recent heartbeat"}
               </small>
             </div>
             <span className="status-pill">
-              {workers.some((w) => w.online) ? "ONLINE" : "OFFLINE"}
+              {previewMode ? "LOCKED" : workers.some((w) => w.online) ? "ONLINE" : "OFFLINE"}
             </span>
           </div>
           <p>
-            {workers.some((w) => w.online)
-              ? "A worker heartbeat was received recently. Run status still depends on its actual report."
-              : "APK execution waits until an authenticated, isolated Android worker connects."}
+            {previewMode
+              ? "Worker heartbeats and private run details require a signed-in account."
+              : workers.some((w) => w.online)
+                ? "A worker heartbeat was received recently. Run status still depends on its actual report."
+                : "APK execution waits until an authenticated, isolated Android worker connects."}
           </p>
           <a
             href={API_DOCS_URL + "/docs"}
@@ -449,8 +453,8 @@ export default function App() {
                 <p>Current service and worker state, reported by the connected API.</p>
                 <div className="workspace-status-grid">
                   <div><small>API</small><b>{apiStatus === "online" ? "Connected" : apiStatus === "offline" ? "Unavailable" : "Checking"}</b></div>
-                  <div><small>Execution workers</small><b>{workers.filter((worker) => worker.online).length} online</b></div>
-                  <div><small>APK upload</small><b>{capabilities ? (capabilities.apk_upload ? "Available" : "Unavailable") : "Checking"}</b></div>
+                  <div><small>Execution workers</small><b>{previewMode ? "Private" : workers.filter((worker) => worker.online).length + " online"}</b></div>
+                  <div><small>APK upload</small><b>{previewMode ? "Sign-in required" : capabilities ? (capabilities.apk_upload ? "Available" : "Unavailable") : "Checking"}</b></div>
                   <div><small>APK execution</small><b>{capabilities ? (capabilities.android_execution ? "Enabled" : "Disabled") : "Checking"}</b></div>
                 </div>
                 <div className="workspace-status-foot">
@@ -510,11 +514,11 @@ export default function App() {
                 TEST RUNS <FlaskConical size={17} />
               </div>
               <div className="metric-value">
-                {runs.length}
-                <span className="metric-unit"> recorded</span>
+                {previewMode ? "Private" : runs.length}
+                <span className="metric-unit">{previewMode ? " history" : " recorded"}</span>
               </div>
               <div className="metric-foot">
-                <span className="metric-neutral" /> No synthetic execution results
+                <span className="metric-neutral" /> {previewMode ? "Sign in to view private test runs" : "No synthetic execution results"}
               </div>
             </div>
 
@@ -670,6 +674,12 @@ export default function App() {
                         <CircleAlert size={16} />
                         <span>API is down or unreachable. Unable to load recent runs.</span>
                       </div>
+                    ) : previewMode ? (
+                      <div className="empty-state">
+                        <div className="empty-icon"><ShieldCheck size={22} /></div>
+                        <b>Private run history</b>
+                        <p>Sign in to view your saved test runs and worker evidence.</p>
+                      </div>
                     ) : capabilities?.database_persistence !== true ? (
                       <div className="empty-state">
                         <div className="empty-icon">
@@ -761,6 +771,12 @@ export default function App() {
                       <CircleAlert size={18} />
                       <span>API is down or unreachable. Unable to load test runs.</span>
                     </div>
+                  ) : previewMode ? (
+                    <div className="empty-state">
+                      <div className="empty-icon"><ShieldCheck size={22} /></div>
+                      <b>Private run history</b>
+                      <p>Sign in to view saved test runs, worker reports and lifecycle evidence.</p>
+                    </div>
                   ) : capabilities?.database_persistence !== true ? (
                     <div className="empty-state">
                       <div className="empty-icon">
@@ -793,7 +809,9 @@ export default function App() {
             {/* Detailed run view route */}
             <Route
               path="/runs/:id"
-              element={<RunDetailView personas={personas} />}
+              element={previewMode
+                ? <section className="panel full-panel"><div className="empty-state"><ShieldCheck size={28} /><b>Private run evidence</b><p>Sign in to open run details, reports and lifecycle events.</p></div></section>
+                : <RunDetailView personas={personas} />}
             />
 
             {/* Log analysis route */}
@@ -828,18 +846,15 @@ export default function App() {
                   ) : !analysis ? (
                     <div className="empty-state">
                       <div className="empty-icon">
-                        <FileSearch size={22} />
+                        {previewMode ? <ShieldCheck size={22} /> : <FileSearch size={22} />}
                       </div>
-                      <b>No analysis report yet</b>
+                      <b>{previewMode ? "Private log analysis" : "No analysis report yet"}</b>
                       <p>
-                        Paste Android logcat in Overview to create a report with source-line evidence.
+                        {previewMode
+                          ? "Sign in to submit logcat, create private reports and export analysis evidence."
+                          : "Paste Android logcat in Overview to create a report with source-line evidence."}
                       </p>
-                      <button
-                        className="primary-button"
-                        onClick={() => navigate("/")}
-                      >
-                        Open log analyzer
-                      </button>
+                      {!previewMode && <button className="primary-button" onClick={() => navigate("/")}>Open log analyzer</button>}
                     </div>
                   ) : (
                     <>
