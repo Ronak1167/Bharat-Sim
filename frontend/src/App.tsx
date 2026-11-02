@@ -93,21 +93,27 @@ export default function App() {
       setApiStatus("online");
       setError("");
 
-      // Operational history is database-backed, while personas and planning
-      // remain useful without a configured production database. Do not let a
-      // 503 from history/status endpoints make the entire dashboard look offline.
-      const [runResult, workerResult] = await Promise.allSettled([
-        api<{ items: Run[] }>("/api/v1/runs"),
-        api<{ items: Worker[] }>("/api/v1/workers")
-      ]);
-      setRuns(runResult.status === "fulfilled" ? runResult.value.items : []);
-      setWorkers(workerResult.status === "fulfilled" ? workerResult.value.items : []);
-      if (!previewMode && capabilityContract.database_persistence !== true) {
-        setNotice("Persistent PostgreSQL is not configured. Risk planning and pasted-log analysis work, but run history, APK registration, and saved reports are unavailable.");
-      } else if (!previewMode && (runResult.status === "rejected" || workerResult.status === "rejected")) {
-        setNotice("Some operational data is temporarily unavailable. Refresh to retry.");
-      } else if (previewMode) {
+      // Guest preview is limited to public personas and planning. Do not call
+      // protected run-history or worker endpoints and create avoidable 401s.
+      if (previewMode) {
+        setRuns([]);
+        setWorkers([]);
         setNotice("");
+      } else {
+        // Operational history is database-backed, while personas and planning
+        // remain useful without a configured production database. Do not let a
+        // 503 from history/status endpoints make the entire dashboard look offline.
+        const [runResult, workerResult] = await Promise.allSettled([
+          api<{ items: Run[] }>("/api/v1/runs"),
+          api<{ items: Worker[] }>("/api/v1/workers")
+        ]);
+        setRuns(runResult.status === "fulfilled" ? runResult.value.items : []);
+        setWorkers(workerResult.status === "fulfilled" ? workerResult.value.items : []);
+        if (capabilityContract.database_persistence !== true) {
+          setNotice("Persistent PostgreSQL is not configured. Risk planning and pasted-log analysis work, but run history, APK registration, and saved reports are unavailable.");
+        } else if (runResult.status === "rejected" || workerResult.status === "rejected") {
+          setNotice("Some operational data is temporarily unavailable. Refresh to retry.");
+        }
       }
     } catch (err) {
       setApiStatus("offline");
