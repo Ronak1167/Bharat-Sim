@@ -29,6 +29,8 @@ test("public preview exposes the live planner but keeps private actions gated", 
   await expect(page.getByText("API connected")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bharat personas" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Risk-first test plan" })).toBeVisible();
+  await page.getByRole("button", { name: /Explore risk planner/ }).click();
+  await expect(page.locator("#risk-planner")).toBeInViewport();
   await expect(page.getByPlaceholder("Paste Android logcat output here…")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Analyze evidence" })).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
