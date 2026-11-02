@@ -88,15 +88,46 @@ def test_production_capabilities_disable_upload_without_persistent_storage(monke
     assert capabilities["direct_apk_upload"] is False
 
 
-def test_production_capabilities_require_database_and_storage_for_upload(monkeypatch):
+def test_production_capabilities_require_database_storage_and_worker_for_upload(monkeypatch):
     monkeypatch.setattr(main, "APP_ENV", "production")
     monkeypatch.setattr(main, "DATABASE_URL", "postgresql://user:pass@db.example.com:5432/postgres?sslmode=require")
     monkeypatch.setattr(main, "STORAGE_ENABLED", True)
+    monkeypatch.setattr(main, "production_worker_execution_enabled", lambda: True)
+    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "w" * 40)
 
     capabilities = main.capabilities()
 
-    assert capabilities["apk_upload"] is True
-    assert capabilities["direct_apk_upload"] is True
+    assert capabilities["apk_upload"] is False
+    assert capabilities["direct_apk_upload"] is False
+
+
+
+
+def test_local_capabilities_hide_apk_upload_without_a_worker(monkeypatch):
+    monkeypatch.setattr(main, "APP_ENV", "development")
+    monkeypatch.setattr(main, "DATABASE_URL", "")
+    monkeypatch.setattr(main, "STORAGE_ENABLED", False)
+    monkeypatch.setattr(main, "production_worker_execution_enabled", lambda: True)
+    monkeypatch.delenv("BHARATSIM_WORKER_TOKEN", raising=False)
+
+    capabilities = main.capabilities()
+
+    assert capabilities["apk_upload"] is False
+    assert capabilities["direct_apk_upload"] is False
+    assert capabilities["worker_dispatch"] is False
+
+
+def test_local_apk_intake_is_rejected_without_a_worker(monkeypatch):
+    monkeypatch.setattr(main, "APP_ENV", "development")
+    monkeypatch.setattr(main, "production_worker_execution_enabled", lambda: True)
+    monkeypatch.delenv("BHARATSIM_WORKER_TOKEN", raising=False)
+    upload = main.UploadFile(filename="sample.apk", file=BytesIO(b"PK\\x03\\x04"))
+
+    with pytest.raises(main.HTTPException) as error:
+        asyncio.run(main.create_run(None, "budget-android", upload))
+
+    assert error.value.status_code == 503
+    assert "worker" in error.value.detail.lower()
 
 
 def test_serverless_database_access_fails_closed_without_postgres(monkeypatch):
