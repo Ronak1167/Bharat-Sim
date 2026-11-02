@@ -93,3 +93,43 @@ Do not provision paid infrastructure or change unrelated Render/GenomeGuard serv
 - Supabase API key security: https://supabase.com/docs/guides/getting-started/api-keys
 - Supabase Storage access control: https://supabase.com/docs/guides/storage/security/access-control
 - Android Virtualization Framework overview (ARM64 Android-device capability, not a substitute for a cloud KVM host): https://source.android.com/docs/core/virtualization
+
+
+---
+
+## Follow-up verification — 2026-11-02, 19:45 IST
+
+This follow-up supersedes the earlier repository SHA and frontend-preview status above where they differ. It records read-only checks; no shared Supabase objects or production credentials were changed.
+
+### Current repository and checks
+
+- Current `main`: `3cc6741ba883a0a9df6fa334d23aaf452ec6ca6b`.
+- CI [41455573701](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41455573701): all seven jobs passed, including backend, frontend build, real-API Playwright E2E, PostgreSQL integration, worker guards, unified Vercel build, and Docker/Compose smoke.
+- Dependency security audit [41455573673](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41455573673): passed.
+- The public guest preview is now tested not to call protected `/api/v1/runs`, `/api/v1/workers`, or per-run endpoints. It only uses public personas, capability and planning routes. Private log submission, APK registration, reports and run history remain locked.
+
+### Current Vercel project state
+
+- Project: `bharat-sim-81g2` (`prj_W4JdLFJG49cookkLV8AI5JAZXaZc`), team `team_63hlwmoUy82rmf7zoaKKkXll`.
+- Latest verified Production deployment remains READY on `b67e9dff0e090aaa87795f12f4ebfba61b10e3e2`; it does not contain the current guest-preview code.
+- The current main commit's two Vercel Git checks still fail with the explicit `build-rate-limit` response. No preview deployments were found for `main` or `feat/public-planner-preview`. No further deployment attempt was made.
+- A read-only environment inventory shows `BHARATSIM_DATABASE_URL`, `SUPABASE_SECRET_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are absent from this project's environment list. `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` exist as sensitive entries, but Vercel did not return their decrypted values. The browser `VITE_SUPABASE_URL` resolves to the shared Supabase project `common 1`.
+
+### Current Supabase common1 state
+
+- Project `hkyieaovolkethovyenb` (`common 1`) is `ACTIVE_HEALTHY`, region `ap-south-1`, PostgreSQL 17.11.
+- The `bharatsim` schema and expected tables are present: `runs`, `analyses`, `workers`, `run_events`, `artifacts`, `quotas`, and `audit_events`. Table metadata reported zero rows.
+- The private `bharatsim-private` Storage bucket exists, is not public, and has the 150 MiB upload limit and APK/ZIP/octet-stream MIME restrictions.
+- Migration history includes `bharatsim_core`, `bharatsim_fk_indexes`, `bharatsim_private_apk_storage_bucket`, and `bharatsim_signed_upload_sizes`; these migrations are already applied.
+- A read-only privilege check confirmed `anon` and `authenticated` have no `USAGE` on the `bharatsim` schema and cannot SELECT `bharatsim.runs`; `service_role` has schema usage and SELECT access. This is consistent with the private-schema design. Do not add browser grants or broad RLS policies to silence advisor INFO notices.
+- Security advisors returned INFO-level RLS-enabled-without-policy notices across the shared project, including BharatSim and GenomeGuard. Do not modify GenomeGuard or other shared project objects as part of this release.
+
+### Remaining external release gates
+
+1. Add the common1 Transaction Pooler URL as server-only `BHARATSIM_DATABASE_URL` in Vercel Production, with TLS required and the appropriate pooler settings.
+2. Add the modern server-only Supabase `SUPABASE_SECRET_KEY` (or legacy service-role key only if unavoidable) to Vercel Production. Never expose it in `VITE_*`, GitHub, source or logs.
+3. Verify live Supabase Auth Site URL/redirect allowlist and run real signup, confirmation, sign-in, refresh, expiry and sign-out tests.
+4. Provision and independently attest the dedicated KVM/Firecracker worker host, default-deny egress and cleanup lifecycle before changing any worker flags.
+5. Wait for Vercel's build-rate limit to clear, then deploy and verify that the Production SHA exactly matches `main`, and smoke-test the live guest preview and readiness endpoints.
+
+Until those items pass, BharatSim remains a tested controlled-beta/local demo, not a production-ready customer APK execution service.
