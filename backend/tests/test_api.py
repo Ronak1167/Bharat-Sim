@@ -372,7 +372,7 @@ def test_production_missing_database_keeps_liveness_and_fails_closed(monkeypatch
     assert not (tmp_path / "must-not-create.sqlite3").exists()
 
 
-def test_production_requires_private_storage_for_apk_upload(monkeypatch):
+def test_production_requires_worker_before_apk_upload(monkeypatch):
     from app import main
 
     monkeypatch.setattr(main, "APP_ENV", "production")
@@ -387,4 +387,4 @@ def test_production_requires_private_storage_for_apk_upload(monkeypatch):
         data={"persona_id": "baseline"},
     )
     assert response.status_code == 503
-    assert "storage" in response.json()["detail"].lower()
+    assert "worker" in response.json()["detail"].lower()
