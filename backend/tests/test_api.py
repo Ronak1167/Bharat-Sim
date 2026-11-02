@@ -169,7 +169,6 @@ def test_supabase_auth_required_and_run_data_is_owner_scoped(monkeypatch, tmp_pa
     main.init_db()
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setenv("BHARATSIM_REQUIRE_API_KEY", "false")
-    monkeypatch.setenv("BHARATSIM_WORKER_TOKEN", "test-worker-token-00000000000000000000000000000000")
     monkeypatch.setattr(
         main, "verify_supabase_access_token",
         lambda token: {
@@ -390,7 +389,7 @@ def test_production_requires_private_storage_before_apk_upload(monkeypatch):
     monkeypatch.setattr(main, "DATABASE_URL", "postgresql://user:pass@db.example.com:5432/postgres?sslmode=require")
     monkeypatch.setattr(main, "AUTH_REQUIRED", True)
     monkeypatch.setattr(main, "SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(main, "STORAGE_ENABLED", True)
+    monkeypatch.setattr(main, "STORAGE_ENABLED", False)
     monkeypatch.setattr(main, "verify_supabase_access_token", lambda token: "test-user-id")
     monkeypatch.delenv("BHARATSIM_WORKER_TOKEN", raising=False)
 
