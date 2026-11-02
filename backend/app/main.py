@@ -1117,8 +1117,6 @@ def create_plan(request: PlanRequest):
 @app.post("/api/v1/uploads/sign")
 def sign_apk_upload(payload: SignedUploadRequest, request: Request):
     """Create a private, time-limited upload URL so APK bytes bypass Vercel's 4.5 MB function limit."""
-    if not worker_dispatch_configured():
-        raise HTTPException(status_code=503, detail="APK uploads are disabled because no verified execution worker is configured.")
     if not STORAGE_ENABLED:
         raise HTTPException(status_code=503, detail="Direct private APK uploads are not configured on this server.")
     if payload.persona_id not in PERSONAS:
@@ -1212,7 +1210,7 @@ def complete_apk_upload(run_id: str, request: Request):
                 "reason": "size_mismatch",
             })
         raise HTTPException(status_code=422, detail="Uploaded APK size did not match the signed upload request.")
-    worker_configured = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32
+    worker_configured = worker_dispatch_configured()
     status = "queued" if worker_configured else "awaiting_worker"
     with db() as conn:
         if AUTH_REQUIRED:
@@ -1255,8 +1253,6 @@ async def create_run(
     persona_id: str = Form("budget-android"),
     apk: UploadFile = File(...),
 ):
-    if not worker_dispatch_configured():
-        raise HTTPException(status_code=503, detail="APK uploads are disabled because no verified execution worker is configured.")
     if not apk.filename:
         raise HTTPException(status_code=422, detail="An APK file is required to register a test run")
     if requires_persistent_database() and not STORAGE_ENABLED:
@@ -1315,7 +1311,7 @@ async def create_run(
                     pass
             raise
         apk_name, apk_hash = safe_name, digest.hexdigest()
-    worker_configured = len(os.getenv("BHARATSIM_WORKER_TOKEN", "")) >= 32
+    worker_configured = worker_dispatch_configured()
     status = "queued" if (apk_path or apk_storage_path) and worker_configured else "awaiting_worker"
     created = utcnow()
     try:
@@ -1880,9 +1876,11 @@ def capabilities():
     persistent_database_required = requires_persistent_database()
     database_configured = bool(DATABASE_URL) if persistent_database_required else True
     worker = worker_dispatch_configured()
-    # An APK upload is only useful when a verified worker can actually claim it.
-    upload_available = database_configured and worker and (STORAGE_ENABLED if persistent_database_required else True)
-    direct_upload_available = database_configured and STORAGE_ENABLED and worker
+    # Private APK intake can persist a run while it waits for an approved worker.
+    # Execution remains independently gated by worker_dispatch_configured().
+    upload_storage_available = STORAGE_ENABLED if persistent_database_required else True
+    upload_available = database_configured and upload_storage_available
+    direct_upload_available = database_configured and STORAGE_ENABLED
     return {
         "database_persistence": database_configured,
         "apk_upload": upload_available, "direct_apk_upload": direct_upload_available,
