@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import {
   Activity,
   ArrowDownToLine,
@@ -895,6 +895,9 @@ export default function App() {
                 </section>
               }
             />
+
+            {/* Keep the plural browser URL compatible with the API resource naming. */}
+            <Route path="/analyses" element={<Navigate to="/analysis" replace />} />
 
             {/* Fallback not found route */}
             <Route

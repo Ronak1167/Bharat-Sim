@@ -109,3 +109,14 @@ test("secure workspace requires sign-in when no session exists", async ({ page }
   await expect(page.getByLabel("Email address")).toBeVisible();
   await expect(page.getByLabel("Password")).toBeVisible();
 });
+
+test("workspace deep links render after direct browser navigation", async ({ page }) => {
+  await page.goto("/runs");
+  await expect(page).toHaveURL(/\\/runs$/);
+  await expect(page.getByRole("heading", { name: "Test sessions" })).toBeVisible();
+
+  // The browser-facing alias is plural; the canonical React route remains /analysis.
+  await page.goto("/analyses");
+  await expect(page).toHaveURL(/\\/analysis$/);
+  await expect(page.getByRole("heading", { name: "Log analysis results" })).toBeVisible();
+});
