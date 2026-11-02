@@ -26,7 +26,7 @@ Use a clean checkout of `main`. Requirements: Python 3.12, Node.js 22.12 or newe
 ```powershell
 cd backend
 py -3.12 -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
@@ -70,7 +70,7 @@ npm run dev
 On macOS / Linux:
 
 ```bash
-printf '%s\\n' 'VITE_API_BASE_URL=http://127.0.0.1:8000' > .env.local
+printf '%s\n' 'VITE_API_BASE_URL=http://127.0.0.1:8000' > .env.local
 npm run dev
 ```
 
