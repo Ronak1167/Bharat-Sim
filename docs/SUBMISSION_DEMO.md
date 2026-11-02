@@ -21,17 +21,31 @@ Use a clean checkout of `main`. Requirements: Python 3.12, Node.js 22.12 or newe
 
 ### Terminal 1 — API
 
-```bash
+**Windows PowerShell**
+
+```powershell
 cd backend
-python -m venv .venv
-# macOS/Linux:
-source .venv/bin/activate
-Windows PowerShell: run `.venv\\Scripts\\Activate.ps1` instead of the macOS/Linux activation command.
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+py -3.12 -m venv .venv
+.\\.venv\\Scripts\\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
-The default local development configuration uses local SQLite and local filesystem uploads. Do not copy production credentials into this demo. Confirm the API is alive at `http://127.0.0.1:8000/health/live` and inspect `http://127.0.0.1:8000/health/ready`.
+If PowerShell blocks virtual-environment activation, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that terminal, then activate again.
+
+**macOS / Linux**
+
+```bash
+cd backend
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+The default local development configuration uses local SQLite and local filesystem uploads. With no `VITE_SUPABASE_URL` / publishable key in the frontend environment and no `BHARATSIM_AUTH_REQUIRED=true` in the API environment, the local demo opens directly without sign-in. This is a local-development mode only; it is not the production authentication configuration.
+
+Do not copy production credentials into this demo. Confirm the API is alive at `http://127.0.0.1:8000/health/live`. In local development, `/health/ready` should report the local API database available; execution readiness can still be unavailable because no Android worker is connected.
 
 ### Terminal 2 — dashboard
 
@@ -40,21 +54,50 @@ cd frontend
 npm ci
 ```
 
-Create `frontend/.env.local` (do not commit it) with:
+Create `.env.local` inside the `frontend` directory (do not commit it) with:
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Then run:
+On Windows PowerShell, you can create it with:
 
-```bash
+```powershell
+"VITE_API_BASE_URL=http://127.0.0.1:8000" | Set-Content -Encoding ascii .env.local
 npm run dev
 ```
 
-**Windows PowerShell note:** after `npm ci`, create `.env.local` with the same `VITE_API_BASE_URL` line, then run `npm run dev`. Keep the API terminal open while recording; closing it disconnects the dashboard from its backend.
+On macOS / Linux:
+
+```bash
+printf '%s\\n' 'VITE_API_BASE_URL=http://127.0.0.1:8000' > .env.local
+npm run dev
+```
+
+Keep the API terminal open while recording; closing it disconnects the dashboard from its backend.
 
 Open the local Vite URL printed by the command (normally `http://localhost:5173`). Do not set `VITE_SUPABASE_URL` or a publishable key for the local no-auth demo unless you intentionally want to test the sign-in flow. Never place a service-role key, Supabase secret key, database password, or worker token in a `VITE_*` variable.
+
+### Capture real Android logcat for the analysis segment
+
+Do not paste invented or copied example errors into the recording. Use logs from an Android app you own or are authorised to test, preferably on a disposable emulator.
+
+1. Connect the emulator/device and verify it is visible:
+
+   ```bash
+   adb devices
+   ```
+
+2. Clear old buffered logs, reproduce the actual failure or scenario in your app, then capture the new log stream:
+
+   ```bash
+   adb logcat -c
+   adb logcat -v threadtime > bharatsim-logcat.txt
+   ```
+
+3. After reproducing the issue, stop the capture with `Ctrl+C`, inspect the file, remove any personal identifiers, access tokens, URLs with credentials, or customer data, and paste the relevant real log lines into **Inspect logcat**.
+
+If you cannot reproduce a crash or error in an app you are authorised to test, do not manufacture one for the video. Demonstrate the planner and explain that the analyzer needs actual log evidence. The GitHub [Android emulator smoke run](https://github.com/kaustubhdua/Bharat-Sim/actions/runs/41331104452) has a downloadable CI artifact for the repository's source-built fixture APK; label that evidence as CI fixture output, not a customer APK or your local device run.
 
 ### Optional — persistent local PostgreSQL
 
